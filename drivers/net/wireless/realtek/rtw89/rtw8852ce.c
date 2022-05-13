@@ -9,6 +9,15 @@
 #include "reg.h"
 #include "rtw8852c.h"
 
+static const struct rtw89_pci_bd_idx_addr rtw8852c_bd_idx_addr_low_power = {
+	.tx_bd_addrs = {R_AX_DRV_FW_HSK_0, R_AX_DRV_FW_HSK_1, R_AX_DRV_FW_HSK_2,
+			R_AX_DRV_FW_HSK_3, 0, 0,
+			0, 0, R_AX_DRV_FW_HSK_4,
+			0, 0, 0,
+			R_AX_DRV_FW_HSK_5},
+	.rx_bd_addrs = {R_AX_DRV_FW_HSK_6, R_AX_DRV_FW_HSK_7},
+};
+
 static const struct rtw89_pci_info rtw8852c_pci_info = {
 	.txbd_trunc_mode	= MAC_AX_BD_TRUNC,
 	.rxbd_trunc_mode	= MAC_AX_BD_TRUNC,
@@ -39,10 +48,17 @@ static const struct rtw89_pci_info rtw8852c_pci_info = {
 	.dma_busy2_reg		= R_AX_HAXI_DMA_BUSY2,
 	.dma_busy3_reg		= R_AX_HAXI_DMA_BUSY3,
 
+	.rpwm_addr		= R_AX_PCIE_HRPWM_V1,
+	.cpwm_addr		= R_AX_PCIE_CRPWM,
+	.bd_idx_addr_low_power	= &rtw8852c_bd_idx_addr_low_power,
 	.dma_addr_set		= &rtw89_pci_ch_dma_addr_set_v1,
 
 	.ltr_set		= rtw89_pci_ltr_set_v1,
 	.fill_txaddr_info	= rtw89_pci_fill_txaddr_info_v1,
+	.config_intr_mask	= rtw89_pci_config_intr_mask_v1,
+	.enable_intr		= rtw89_pci_enable_intr_v1,
+	.disable_intr		= rtw89_pci_disable_intr_v1,
+	.recognize_intrs	= rtw89_pci_recognize_intrs_v1,
 };
 
 static const struct rtw89_driver_info rtw89_8852ce_info = {

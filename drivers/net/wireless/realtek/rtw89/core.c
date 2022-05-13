@@ -856,6 +856,13 @@ int rtw89_h2c_tx(struct rtw89_dev *rtwdev,
 	u32 cnt;
 	int ret;
 
+	if (!test_bit(RTW89_FLAG_POWERON, rtwdev->flags)) {
+		rtw89_debug(rtwdev, RTW89_DBG_FW,
+			    "ignore h2c due to power is off with firmware state=%d\n",
+			    test_bit(RTW89_FLAG_FW_RDY, rtwdev->flags));
+		return 0;
+	}
+
 	tx_req.skb = skb;
 	tx_req.tx_type = RTW89_CORE_TX_TYPE_FWCMD;
 	if (fwdl)
@@ -1420,7 +1427,10 @@ static void rtw89_core_rx_to_mac80211(struct rtw89_dev *rtwdev,
 {
 	rtw89_core_hw_to_sband_rate(rx_status);
 	rtw89_core_rx_stats(rtwdev, phy_ppdu, desc_info, skb_ppdu);
+	/* In low power mode, it does RX in thread context. */
+	local_bh_disable();
 	ieee80211_rx_napi(rtwdev->hw, NULL, skb_ppdu, &rtwdev->napi);
+	local_bh_enable();
 	rtwdev->napi_budget_countdown--;
 }
 

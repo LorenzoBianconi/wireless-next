@@ -17,7 +17,6 @@
 
 #include "util.h"
 
-#define RTW_NAPI_WEIGHT_NUM		64
 #define RTW_MAX_MAC_ID_NUM		32
 #define RTW_MAX_SEC_CAM_NUM		32
 #define MAX_PG_CAM_BACKUP_NUM		8
@@ -1179,6 +1178,7 @@ struct rtw_chip_info {
 	bool rx_ldpc;
 	bool tx_stbc;
 	u8 max_power_index;
+	u8 ampdu_density;
 
 	u16 fw_fifo_addr[RTW_FW_FIFO_MAX];
 	const struct rtw_fwcd_segs *fwcd_segs;

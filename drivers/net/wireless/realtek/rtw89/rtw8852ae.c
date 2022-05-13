@@ -6,6 +6,7 @@
 #include <linux/pci.h>
 
 #include "pci.h"
+#include "reg.h"
 #include "rtw8852a.h"
 
 static const struct rtw89_pci_info rtw8852a_pci_info = {
@@ -38,10 +39,17 @@ static const struct rtw89_pci_info rtw8852a_pci_info = {
 	.dma_busy2_reg		= R_AX_PCIE_DMA_BUSY2,
 	.dma_busy3_reg		= R_AX_PCIE_DMA_BUSY1,
 
+	.rpwm_addr		= R_AX_PCIE_HRPWM,
+	.cpwm_addr		= R_AX_CPWM,
+	.bd_idx_addr_low_power	= NULL,
 	.dma_addr_set		= &rtw89_pci_ch_dma_addr_set,
 
 	.ltr_set		= rtw89_pci_ltr_set,
 	.fill_txaddr_info	= rtw89_pci_fill_txaddr_info,
+	.config_intr_mask	= rtw89_pci_config_intr_mask,
+	.enable_intr		= rtw89_pci_enable_intr,
+	.disable_intr		= rtw89_pci_disable_intr,
+	.recognize_intrs	= rtw89_pci_recognize_intrs,
 };
 
 static const struct rtw89_driver_info rtw89_8852ae_info = {
