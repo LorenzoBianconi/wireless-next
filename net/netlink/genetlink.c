@@ -757,6 +757,9 @@ static int genl_family_rcv_msg(const struct genl_family *family,
 	if (nlh->nlmsg_len < nlmsg_msg_size(hdrlen))
 		return -EINVAL;
 
+	if (hdr->cmd >= family->resv_start_op && hdr->reserved)
+		return -EINVAL;
+
 	if (genl_get_cmd(hdr->cmd, family, &op))
 		return -EOPNOTSUPP;
 
@@ -1174,13 +1177,17 @@ static int ctrl_dumppolicy_start(struct netlink_callback *cb)
 							     op.policy,
 							     op.maxattr);
 			if (err)
-				return err;
+				goto err_free_state;
 		}
 	}
 
 	if (!ctx->state)
 		return -ENODATA;
 	return 0;
+
+err_free_state:
+	netlink_policy_dump_free(ctx->state);
+	return err;
 }
 
 static void *ctrl_dumppolicy_prep(struct sk_buff *skb,
@@ -1344,6 +1351,7 @@ static struct genl_family genl_ctrl __ro_after_init = {
 	.module = THIS_MODULE,
 	.ops = genl_ctrl_ops,
 	.n_ops = ARRAY_SIZE(genl_ctrl_ops),
+	.resv_start_op = CTRL_CMD_GETPOLICY + 1,
 	.mcgrps = genl_ctrl_groups,
 	.n_mcgrps = ARRAY_SIZE(genl_ctrl_groups),
 	.id = GENL_ID_CTRL,
@@ -1358,7 +1366,7 @@ static int genl_bind(struct net *net, int group)
 	unsigned int id;
 	int ret = 0;
 
-	genl_lock_all();
+	down_read(&cb_lock);
 
 	idr_for_each_entry(&genl_fam_idr, family, id) {
 		const struct genl_multicast_group *grp;
@@ -1379,7 +1387,7 @@ static int genl_bind(struct net *net, int group)
 		break;
 	}
 
-	genl_unlock_all();
+	up_read(&cb_lock);
 	return ret;
 }
 

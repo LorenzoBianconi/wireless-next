@@ -697,6 +697,7 @@ void rtw_update_channel(struct rtw_dev *rtwdev, u8 center_channel,
 
 	switch (bandwidth) {
 	case RTW_CHANNEL_WIDTH_20:
+	default:
 		primary_channel_idx = RTW_SC_DONT_CARE;
 		break;
 	case RTW_CHANNEL_WIDTH_40:
@@ -727,8 +728,6 @@ void rtw_update_channel(struct rtw_dev *rtwdev, u8 center_channel,
 			 */
 			cch_by_bw[RTW_CHANNEL_WIDTH_40] = center_channel - 4;
 		}
-		break;
-	default:
 		break;
 	}
 
@@ -2094,7 +2093,7 @@ int rtw_core_init(struct rtw_dev *rtwdev)
 	ret = rtw_load_firmware(rtwdev, RTW_NORMAL_FW);
 	if (ret) {
 		rtw_warn(rtwdev, "no firmware loaded\n");
-		return ret;
+		goto out;
 	}
 
 	if (chip->wow_fw_name) {
@@ -2104,11 +2103,15 @@ int rtw_core_init(struct rtw_dev *rtwdev)
 			wait_for_completion(&rtwdev->fw.completion);
 			if (rtwdev->fw.firmware)
 				release_firmware(rtwdev->fw.firmware);
-			return ret;
+			goto out;
 		}
 	}
 
 	return 0;
+
+out:
+	destroy_workqueue(rtwdev->tx_wq);
+	return ret;
 }
 EXPORT_SYMBOL(rtw_core_init);
 

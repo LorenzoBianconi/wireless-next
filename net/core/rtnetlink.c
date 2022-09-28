@@ -866,14 +866,12 @@ static void set_operstate(struct net_device *dev, unsigned char transition)
 		break;
 
 	case IF_OPER_TESTING:
-		if (operstate == IF_OPER_UP ||
-		    operstate == IF_OPER_UNKNOWN)
+		if (netif_oper_up(dev))
 			operstate = IF_OPER_TESTING;
 		break;
 
 	case IF_OPER_DORMANT:
-		if (operstate == IF_OPER_UP ||
-		    operstate == IF_OPER_UNKNOWN)
+		if (netif_oper_up(dev))
 			operstate = IF_OPER_DORMANT;
 		break;
 	}
@@ -6070,6 +6068,7 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 	if (kind == RTNL_KIND_DEL && (nlh->nlmsg_flags & NLM_F_BULK) &&
 	    !(flags & RTNL_FLAG_BULK_DEL_SUPPORTED)) {
 		NL_SET_ERR_MSG(extack, "Bulk delete is not supported");
+		module_put(owner);
 		goto err_unlock;
 	}
 

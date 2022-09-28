@@ -3071,6 +3071,7 @@ static int mlx4_init_port_info(struct mlx4_dev *dev, int port)
 	err = device_create_file(&dev->persist->pdev->dev, &info->port_attr);
 	if (err) {
 		mlx4_err(dev, "Failed to create file for port %d\n", port);
+		devlink_port_type_clear(&info->devlink_port);
 		devl_port_unregister(&info->devlink_port);
 		info->port = -1;
 		return err;
@@ -3093,6 +3094,7 @@ static int mlx4_init_port_info(struct mlx4_dev *dev, int port)
 		mlx4_err(dev, "Failed to create mtu file for port %d\n", port);
 		device_remove_file(&info->dev->persist->pdev->dev,
 				   &info->port_attr);
+		devlink_port_type_clear(&info->devlink_port);
 		devl_port_unregister(&info->devlink_port);
 		info->port = -1;
 		return err;
@@ -3109,6 +3111,7 @@ static void mlx4_cleanup_port_info(struct mlx4_port_info *info)
 	device_remove_file(&info->dev->persist->pdev->dev, &info->port_attr);
 	device_remove_file(&info->dev->persist->pdev->dev,
 			   &info->port_mtu_attr);
+	devlink_port_type_clear(&info->devlink_port);
 	devl_port_unregister(&info->devlink_port);
 
 #ifdef CONFIG_RFS_ACCEL
@@ -3958,11 +3961,9 @@ static int mlx4_devlink_reload_down(struct devlink *devlink, bool netns_change,
 		NL_SET_ERR_MSG_MOD(extack, "Namespace change is not supported");
 		return -EOPNOTSUPP;
 	}
-	devl_lock(devlink);
 	if (persist->num_vfs)
 		mlx4_warn(persist->dev, "Reload performed on PF, will cause reset on operating Virtual Functions\n");
 	mlx4_restart_one_down(persist->pdev);
-	devl_unlock(devlink);
 	return 0;
 }
 
@@ -3975,10 +3976,8 @@ static int mlx4_devlink_reload_up(struct devlink *devlink, enum devlink_reload_a
 	struct mlx4_dev_persistent *persist = dev->persist;
 	int err;
 
-	devl_lock(devlink);
 	*actions_performed = BIT(DEVLINK_RELOAD_ACTION_DRIVER_REINIT);
 	err = mlx4_restart_one_up(persist->pdev, true, devlink);
-	devl_unlock(devlink);
 	if (err)
 		mlx4_err(persist->dev, "mlx4_restart_one_up failed, ret=%d\n",
 			 err);
