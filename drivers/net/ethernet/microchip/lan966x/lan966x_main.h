@@ -9,6 +9,8 @@
 #include <linux/phy.h>
 #include <linux/phylink.h>
 #include <linux/ptp_clock_kernel.h>
+#include <net/pkt_cls.h>
+#include <net/pkt_sched.h>
 #include <net/switchdev.h>
 
 #include "lan966x_regs.h"
@@ -36,6 +38,7 @@
 
 #define NUM_PHYS_PORTS			8
 #define CPU_PORT			8
+#define NUM_PRIO_QUEUES			8
 
 /* Reserved PGIDs */
 #define PGID_CPU			(PGID_AGGR - 6)
@@ -78,6 +81,9 @@
 #define FDMA_XTR_CHANNEL		6
 #define FDMA_INJ_CHANNEL		0
 #define FDMA_DCB_MAX			512
+
+#define SE_IDX_QUEUE			0  /* 0-79 : Queue scheduler elements */
+#define SE_IDX_PORT			80 /* 80-89 : Port schedular elements */
 
 /* MAC table entry types.
  * ENTRYTYPE_NORMAL is subject to aging.
@@ -409,6 +415,8 @@ void lan966x_ptp_txtstamp_release(struct lan966x_port *port,
 				  struct sk_buff *skb);
 irqreturn_t lan966x_ptp_irq_handler(int irq, void *args);
 irqreturn_t lan966x_ptp_ext_irq_handler(int irq, void *args);
+u32 lan966x_ptp_get_period_ps(void);
+int lan966x_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts);
 
 int lan966x_fdma_xmit(struct sk_buff *skb, __be32 *ifh, struct net_device *dev);
 int lan966x_fdma_change_mtu(struct lan966x *lan966x);
@@ -444,6 +452,34 @@ void lan966x_port_stp_state_set(struct lan966x_port *port, u8 state);
 void lan966x_port_ageing_set(struct lan966x_port *port,
 			     unsigned long ageing_clock_t);
 void lan966x_update_fwd_mask(struct lan966x *lan966x);
+
+int lan966x_tc_setup(struct net_device *dev, enum tc_setup_type type,
+		     void *type_data);
+
+int lan966x_mqprio_add(struct lan966x_port *port, u8 num_tc);
+int lan966x_mqprio_del(struct lan966x_port *port);
+
+void lan966x_taprio_init(struct lan966x *lan966x);
+void lan966x_taprio_deinit(struct lan966x *lan966x);
+int lan966x_taprio_add(struct lan966x_port *port,
+		       struct tc_taprio_qopt_offload *qopt);
+int lan966x_taprio_del(struct lan966x_port *port);
+int lan966x_taprio_speed_set(struct lan966x_port *port, int speed);
+
+int lan966x_tbf_add(struct lan966x_port *port,
+		    struct tc_tbf_qopt_offload *qopt);
+int lan966x_tbf_del(struct lan966x_port *port,
+		    struct tc_tbf_qopt_offload *qopt);
+
+int lan966x_cbs_add(struct lan966x_port *port,
+		    struct tc_cbs_qopt_offload *qopt);
+int lan966x_cbs_del(struct lan966x_port *port,
+		    struct tc_cbs_qopt_offload *qopt);
+
+int lan966x_ets_add(struct lan966x_port *port,
+		    struct tc_ets_qopt_offload *qopt);
+int lan966x_ets_del(struct lan966x_port *port,
+		    struct tc_ets_qopt_offload *qopt);
 
 static inline void __iomem *lan_addr(void __iomem *base[],
 				     int id, int tinst, int tcnt,

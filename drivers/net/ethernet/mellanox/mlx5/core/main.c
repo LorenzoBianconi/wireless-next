@@ -494,6 +494,24 @@ static int max_uc_list_get_devlink_param(struct mlx5_core_dev *dev)
 	return err;
 }
 
+bool mlx5_is_roce_on(struct mlx5_core_dev *dev)
+{
+	struct devlink *devlink = priv_to_devlink(dev);
+	union devlink_param_value val;
+	int err;
+
+	err = devlink_param_driverinit_value_get(devlink,
+						 DEVLINK_PARAM_GENERIC_ID_ENABLE_ROCE,
+						 &val);
+
+	if (!err)
+		return val.vbool;
+
+	mlx5_core_dbg(dev, "Failed to get param. err = %d\n", err);
+	return MLX5_CAP_GEN(dev, roce);
+}
+EXPORT_SYMBOL(mlx5_is_roce_on);
+
 static int handle_hca_cap_2(struct mlx5_core_dev *dev, void *set_ctx)
 {
 	void *set_hca_cap;
@@ -597,7 +615,8 @@ static int handle_hca_cap(struct mlx5_core_dev *dev, void *set_ctx)
 			 MLX5_CAP_GEN_MAX(dev, num_total_dynamic_vf_msix));
 
 	if (MLX5_CAP_GEN(dev, roce_rw_supported))
-		MLX5_SET(cmd_hca_cap, set_hca_cap, roce, mlx5_is_roce_init_enabled(dev));
+		MLX5_SET(cmd_hca_cap, set_hca_cap, roce,
+			 mlx5_is_roce_on(dev));
 
 	max_uc_list = max_uc_list_get_devlink_param(dev);
 	if (max_uc_list > 0)
@@ -623,7 +642,7 @@ static int handle_hca_cap(struct mlx5_core_dev *dev, void *set_ctx)
  */
 static bool is_roce_fw_disabled(struct mlx5_core_dev *dev)
 {
-	return (MLX5_CAP_GEN(dev, roce_rw_supported) && !mlx5_is_roce_init_enabled(dev)) ||
+	return (MLX5_CAP_GEN(dev, roce_rw_supported) && !mlx5_is_roce_on(dev)) ||
 		(!MLX5_CAP_GEN(dev, roce_rw_supported) && !MLX5_CAP_GEN(dev, roce));
 }
 
@@ -649,6 +668,33 @@ static int handle_hca_cap_roce(struct mlx5_core_dev *dev, void *set_ctx)
 	MLX5_SET(roce_cap, set_hca_cap, sw_r_roce_src_udp_port, 1);
 
 	err = set_caps(dev, set_ctx, MLX5_SET_HCA_CAP_OP_MOD_ROCE);
+	return err;
+}
+
+static int handle_hca_cap_port_selection(struct mlx5_core_dev *dev,
+					 void *set_ctx)
+{
+	void *set_hca_cap;
+	int err;
+
+	if (!MLX5_CAP_GEN(dev, port_selection_cap))
+		return 0;
+
+	err = mlx5_core_get_caps(dev, MLX5_CAP_PORT_SELECTION);
+	if (err)
+		return err;
+
+	if (MLX5_CAP_PORT_SELECTION(dev, port_select_flow_table_bypass) ||
+	    !MLX5_CAP_PORT_SELECTION_MAX(dev, port_select_flow_table_bypass))
+		return 0;
+
+	set_hca_cap = MLX5_ADDR_OF(set_hca_cap_in, set_ctx, capability);
+	memcpy(set_hca_cap, dev->caps.hca[MLX5_CAP_PORT_SELECTION]->cur,
+	       MLX5_ST_SZ_BYTES(port_selection_cap));
+	MLX5_SET(port_selection_cap, set_hca_cap, port_select_flow_table_bypass, 1);
+
+	err = set_caps(dev, set_ctx, MLX5_SET_HCA_CAP_OP_MODE_PORT_SELECTION);
+
 	return err;
 }
 
@@ -693,6 +739,13 @@ static int set_hca_cap(struct mlx5_core_dev *dev)
 	err = handle_hca_cap_2(dev, set_ctx);
 	if (err) {
 		mlx5_core_err(dev, "handle_hca_cap_2 failed\n");
+		goto out;
+	}
+
+	memset(set_ctx, 0, set_sz);
+	err = handle_hca_cap_port_selection(dev, set_ctx);
+	if (err) {
+		mlx5_core_err(dev, "handle_hca_cap_port_selection failed\n");
 		goto out;
 	}
 
@@ -1488,6 +1541,8 @@ static const int types[] = {
 	MLX5_CAP_IPSEC,
 	MLX5_CAP_PORT_SELECTION,
 	MLX5_CAP_DEV_SHAMPO,
+	MLX5_CAP_MACSEC,
+	MLX5_CAP_ADV_VIRTUALIZATION,
 };
 
 static void mlx5_hca_caps_free(struct mlx5_core_dev *dev)

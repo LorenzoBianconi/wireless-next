@@ -16,6 +16,7 @@
 
 #include <linux/clocksource.h>
 #include <linux/net_tstamp.h>
+#include <linux/pm_qos.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/timecounter.h>
 #include <dt-bindings/firmware/imx/rsrc.h>
@@ -500,6 +501,9 @@ struct bufdesc_ex {
 /* i.MX8MQ SoC integration mix wakeup interrupt signal into "int2" interrupt line. */
 #define FEC_QUIRK_WAKEUP_FROM_INT2	(1 << 22)
 
+/* i.MX6Q adds pm_qos support */
+#define FEC_QUIRK_HAS_PMQOS			BIT(23)
+
 struct bufdesc_prop {
 	int qid;
 	/* Address of Rx and Tx buffers */
@@ -581,6 +585,7 @@ struct fec_enet_private {
 	struct device_node *phy_node;
 	bool	rgmii_txc_dly;
 	bool	rgmii_rxc_dly;
+	bool	rpm_active;
 	int	link;
 	int	full_duplex;
 	int	speed;
@@ -610,6 +615,7 @@ struct fec_enet_private {
 	struct delayed_work time_keep;
 	struct regulator *reg_phy;
 	struct fec_stop_mode_gpr stop_gpr;
+	struct pm_qos_request pm_qos_req;
 
 	unsigned int tx_align;
 	unsigned int rx_align;
@@ -636,13 +642,6 @@ struct fec_enet_private {
 	int pps_enable;
 	unsigned int next_counter;
 
-	struct {
-		struct timespec64 ts_phc;
-		u64 ns_sys;
-		u32 at_corr;
-		u8 at_inc_corr;
-	} ptp_saved_state;
-
 	struct imx_sc_ipc *ipc_handle;
 
 	u64 ethtool_stats[];
@@ -654,9 +653,6 @@ void fec_ptp_start_cyclecounter(struct net_device *ndev);
 void fec_ptp_disable_hwts(struct net_device *ndev);
 int fec_ptp_set(struct net_device *ndev, struct ifreq *ifr);
 int fec_ptp_get(struct net_device *ndev, struct ifreq *ifr);
-
-void fec_ptp_save_state(struct fec_enet_private *fep);
-int fec_ptp_restore_state(struct fec_enet_private *fep);
 
 /****************************************************************************/
 #endif /* FEC_H */
