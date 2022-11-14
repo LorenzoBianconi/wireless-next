@@ -114,6 +114,15 @@ enum rtw89_phy_c2h_ra_func {
 	RTW89_PHY_C2H_FUNC_RA_MAX,
 };
 
+enum rtw89_phy_c2h_dm_func {
+	RTW89_PHY_C2H_DM_FUNC_FW_TEST,
+	RTW89_PHY_C2H_DM_FUNC_FW_TRIG_TX_RPT,
+	RTW89_PHY_C2H_DM_FUNC_SIGB,
+	RTW89_PHY_C2H_DM_FUNC_LOWRT_RTY,
+	RTW89_PHY_C2H_DM_FUNC_MCC_DIG,
+	RTW89_PHY_C2H_DM_FUNC_NUM,
+};
+
 enum rtw89_phy_c2h_class {
 	RTW89_PHY_C2H_CLASS_RUA,
 	RTW89_PHY_C2H_CLASS_RA,
@@ -491,7 +500,7 @@ bool rtw89_phy_write_rf(struct rtw89_dev *rtwdev, enum rtw89_rf_path rf_path,
 bool rtw89_phy_write_rf_v1(struct rtw89_dev *rtwdev, enum rtw89_rf_path rf_path,
 			   u32 addr, u32 mask, u32 data);
 void rtw89_phy_init_bb_reg(struct rtw89_dev *rtwdev);
-void rtw89_phy_init_rf_reg(struct rtw89_dev *rtwdev);
+void rtw89_phy_init_rf_reg(struct rtw89_dev *rtwdev, bool noio);
 void rtw89_phy_config_rf_reg_v1(struct rtw89_dev *rtwdev,
 				const struct rtw89_reg2_def *reg,
 				enum rtw89_rf_path rf_path,

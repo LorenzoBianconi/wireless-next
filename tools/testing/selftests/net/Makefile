@@ -70,6 +70,8 @@ TEST_PROGS += io_uring_zerocopy_tx.sh
 TEST_GEN_FILES += bind_bhash
 TEST_GEN_PROGS += sk_bind_sendto_listen
 TEST_GEN_PROGS += sk_connect_zero_addr
+TEST_PROGS += test_ingress_egress_chaining.sh
+TEST_GEN_PROGS += so_incoming_cpu
 
 TEST_FILES := settings
 
