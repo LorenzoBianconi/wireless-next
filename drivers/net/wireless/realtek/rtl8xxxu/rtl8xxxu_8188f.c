@@ -321,7 +321,37 @@ static const struct rtl8xxxu_rfregval rtl8188fu_cut_b_radioa_init_table[] = {
 	{0xff, 0xffffffff}
 };
 
-static void rtl8xxxu_8188f_channel_to_group(int channel, int *group, int *cck_group)
+static int rtl8188fu_identify_chip(struct rtl8xxxu_priv *priv)
+{
+	struct device *dev = &priv->udev->dev;
+	u32 sys_cfg, vendor;
+	int ret = 0;
+
+	strscpy(priv->chip_name, "8188FU", sizeof(priv->chip_name));
+	priv->rtl_chip = RTL8188F;
+	priv->rf_paths = 1;
+	priv->rx_paths = 1;
+	priv->tx_paths = 1;
+	priv->has_wifi = 1;
+
+	sys_cfg = rtl8xxxu_read32(priv, REG_SYS_CFG);
+	priv->chip_cut = u32_get_bits(sys_cfg, SYS_CFG_CHIP_VERSION_MASK);
+	if (sys_cfg & SYS_CFG_TRP_VAUX_EN) {
+		dev_info(dev, "Unsupported test chip\n");
+		ret = -ENOTSUPP;
+		goto out;
+	}
+
+	vendor = sys_cfg & SYS_CFG_VENDOR_EXT_MASK;
+	rtl8xxxu_identify_vendor_2bits(priv, vendor);
+
+	ret = rtl8xxxu_config_endpoints_no_sie(priv);
+
+out:
+	return ret;
+}
+
+static void rtl8188f_channel_to_group(int channel, int *group, int *cck_group)
 {
 	if (channel < 3)
 		*group = 0;
@@ -347,7 +377,7 @@ rtl8188f_set_tx_power(struct rtl8xxxu_priv *priv, int channel, bool ht40)
 	u8 cck, ofdmbase, mcsbase;
 	int group, cck_group;
 
-	rtl8xxxu_8188f_channel_to_group(channel, &group, &cck_group);
+	rtl8188f_channel_to_group(channel, &group, &cck_group);
 
 	cck = priv->cck_tx_power_index_A[cck_group];
 
@@ -1690,6 +1720,7 @@ static s8 rtl8188f_cck_rssi(struct rtl8xxxu_priv *priv, u8 cck_agc_rpt)
 }
 
 struct rtl8xxxu_fileops rtl8188fu_fops = {
+	.identify_chip = rtl8188fu_identify_chip,
 	.parse_efuse = rtl8188fu_parse_efuse,
 	.load_firmware = rtl8188fu_load_firmware,
 	.power_on = rtl8188fu_power_on,
@@ -1705,6 +1736,7 @@ struct rtl8xxxu_fileops rtl8188fu_fops = {
 	.parse_rx_desc = rtl8xxxu_parse_rxdesc24,
 	.init_aggregation = rtl8188fu_init_aggregation,
 	.init_statistics = rtl8188fu_init_statistics,
+	.init_burst = rtl8xxxu_init_burst,
 	.enable_rf = rtl8188f_enable_rf,
 	.disable_rf = rtl8188f_disable_rf,
 	.usb_quirks = rtl8188f_usb_quirks,

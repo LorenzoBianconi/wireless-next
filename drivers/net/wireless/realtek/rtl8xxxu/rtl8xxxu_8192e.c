@@ -478,6 +478,53 @@ static const struct rtl8xxxu_rfregval rtl8192eu_radiob_init_table[] = {
 	{0xff, 0xffffffff}
 };
 
+static int rtl8192eu_identify_chip(struct rtl8xxxu_priv *priv)
+{
+	struct device *dev = &priv->udev->dev;
+	u32 val32, bonding, sys_cfg, vendor;
+	int ret = 0;
+
+	sys_cfg = rtl8xxxu_read32(priv, REG_SYS_CFG);
+	priv->chip_cut = u32_get_bits(sys_cfg, SYS_CFG_CHIP_VERSION_MASK);
+	if (sys_cfg & SYS_CFG_TRP_VAUX_EN) {
+		dev_info(dev, "Unsupported test chip\n");
+		ret = -ENOTSUPP;
+		goto out;
+	}
+
+	bonding = rtl8xxxu_read32(priv, REG_HPON_FSM);
+	bonding &= HPON_FSM_BONDING_MASK;
+	if (bonding == HPON_FSM_BONDING_1T2R) {
+		strscpy(priv->chip_name, "8191EU", sizeof(priv->chip_name));
+		priv->tx_paths = 1;
+		priv->rtl_chip = RTL8191E;
+	} else {
+		strscpy(priv->chip_name, "8192EU", sizeof(priv->chip_name));
+		priv->tx_paths = 2;
+		priv->rtl_chip = RTL8192E;
+	}
+	priv->rf_paths = 2;
+	priv->rx_paths = 2;
+	priv->has_wifi = 1;
+
+	vendor = sys_cfg & SYS_CFG_VENDOR_EXT_MASK;
+	rtl8xxxu_identify_vendor_2bits(priv, vendor);
+
+	val32 = rtl8xxxu_read32(priv, REG_GPIO_OUTSTS);
+	priv->rom_rev = u32_get_bits(val32, GPIO_RF_RL_ID);
+
+	rtl8xxxu_config_endpoints_sie(priv);
+
+	/*
+	 * Fallback for devices that do not provide REG_NORMAL_SIE_EP_TX
+	 */
+	if (!priv->ep_tx_count)
+		ret = rtl8xxxu_config_endpoints_no_sie(priv);
+
+out:
+	return ret;
+}
+
 static void
 rtl8192e_set_tx_power(struct rtl8xxxu_priv *priv, int channel, bool ht40)
 {
@@ -1693,6 +1740,7 @@ static s8 rtl8192e_cck_rssi(struct rtl8xxxu_priv *priv, u8 cck_agc_rpt)
 }
 
 struct rtl8xxxu_fileops rtl8192eu_fops = {
+	.identify_chip = rtl8192eu_identify_chip,
 	.parse_efuse = rtl8192eu_parse_efuse,
 	.load_firmware = rtl8192eu_load_firmware,
 	.power_on = rtl8192eu_power_on,
