@@ -2423,7 +2423,7 @@ static const struct rtw89_chip_ops rtw8852b_chip_ops = {
 	.btc_update_bt_cnt	= rtw8852b_btc_update_bt_cnt,
 	.btc_wl_s1_standby	= rtw8852b_btc_wl_s1_standby,
 	.btc_set_wl_rx_gain	= rtw8852b_btc_set_wl_rx_gain,
-	.btc_set_policy		= rtw89_btc_set_policy,
+	.btc_set_policy		= rtw89_btc_set_policy_v1,
 };
 
 const struct rtw89_chip_info rtw8852b_chip_info = {
@@ -2437,6 +2437,8 @@ const struct rtw89_chip_info rtw8852b_chip_info = {
 	.rsvd_ple_ofst		= 0x2f800,
 	.hfc_param_ini		= rtw8852b_hfc_param_ini_pcie,
 	.dle_mem		= rtw8852b_dle_mem_pcie,
+	.wde_qempty_acq_num	= 4,
+	.wde_qempty_mgq_sel	= 4,
 	.rf_base_addr		= {0xe000, 0xf000},
 	.pwr_on_seq		= NULL,
 	.pwr_off_seq		= NULL,

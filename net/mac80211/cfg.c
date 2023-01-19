@@ -147,6 +147,7 @@ static int ieee80211_set_ap_mbssid_options(struct ieee80211_sub_if_data *sdata,
 	link_conf->bssid_index = 0;
 	link_conf->nontransmitted = false;
 	link_conf->ema_ap = false;
+	link_conf->bssid_indicator = 0;
 
 	if (sdata->vif.type != NL80211_IFTYPE_AP || !params.tx_wdev)
 		return -EINVAL;
@@ -1251,6 +1252,21 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	prev_beacon_int = link_conf->beacon_int;
 	link_conf->beacon_int = params->beacon_interval;
 
+	if (params->vht_cap) {
+		link_conf->vht_su_beamformer =
+			params->vht_cap->vht_cap_info &
+				cpu_to_le32(IEEE80211_VHT_CAP_SU_BEAMFORMER_CAPABLE);
+		link_conf->vht_su_beamformee =
+			params->vht_cap->vht_cap_info &
+				cpu_to_le32(IEEE80211_VHT_CAP_SU_BEAMFORMEE_CAPABLE);
+		link_conf->vht_mu_beamformer =
+			params->vht_cap->vht_cap_info &
+				cpu_to_le32(IEEE80211_VHT_CAP_MU_BEAMFORMER_CAPABLE);
+		link_conf->vht_mu_beamformee =
+			params->vht_cap->vht_cap_info &
+				cpu_to_le32(IEEE80211_VHT_CAP_MU_BEAMFORMEE_CAPABLE);
+	}
+
 	if (params->he_cap && params->he_oper) {
 		link_conf->he_support = true;
 		link_conf->htc_trig_based_pkt_ext =
@@ -1263,6 +1279,21 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 		if (params->beacon.he_bss_color.enabled)
 			changed |= BSS_CHANGED_HE_BSS_COLOR;
+	}
+
+	if (params->he_cap) {
+		link_conf->he_su_beamformer =
+			params->he_cap->phy_cap_info[3] &
+				IEEE80211_HE_PHY_CAP3_SU_BEAMFORMER;
+		link_conf->he_su_beamformee =
+			params->he_cap->phy_cap_info[4] &
+				IEEE80211_HE_PHY_CAP4_SU_BEAMFORMEE;
+		link_conf->he_mu_beamformer =
+			params->he_cap->phy_cap_info[4] &
+				IEEE80211_HE_PHY_CAP4_MU_BEAMFORMER;
+		link_conf->he_full_ul_mumimo =
+			params->he_cap->phy_cap_info[2] &
+				IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO;
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP &&
@@ -1510,6 +1541,12 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	kfree(link_conf->ftmr_params);
 	link_conf->ftmr_params = NULL;
+
+	sdata->vif.mbssid_tx_vif = NULL;
+	link_conf->bssid_index = 0;
+	link_conf->nontransmitted = false;
+	link_conf->ema_ap = false;
+	link_conf->bssid_indicator = 0;
 
 	__sta_info_flush(sdata, true);
 	ieee80211_free_keys(sdata, true);
@@ -4625,7 +4662,7 @@ void ieee80211_color_change_finish(struct ieee80211_vif *vif)
 EXPORT_SYMBOL_GPL(ieee80211_color_change_finish);
 
 void
-ieeee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
+ieee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
 				       u64 color_bitmap, gfp_t gfp)
 {
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
@@ -4635,7 +4672,7 @@ ieeee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
 
 	cfg80211_obss_color_collision_notify(sdata->dev, color_bitmap, gfp);
 }
-EXPORT_SYMBOL_GPL(ieeee80211_obss_color_collision_notify);
+EXPORT_SYMBOL_GPL(ieee80211_obss_color_collision_notify);
 
 static int
 ieee80211_color_change(struct wiphy *wiphy, struct net_device *dev,

@@ -498,7 +498,8 @@ static u16 rtw89_core_get_mgmt_rate(struct rtw89_dev *rtwdev,
 	const struct rtw89_chan *chan = rtw89_chan_get(rtwdev, RTW89_SUB_ENTITY_0);
 	u16 lowest_rate;
 
-	if (tx_info->flags & IEEE80211_TX_CTL_NO_CCK_RATE || vif->p2p)
+	if (tx_info->flags & IEEE80211_TX_CTL_NO_CCK_RATE ||
+	    (vif && vif->p2p))
 		lowest_rate = RTW89_HW_RATE_OFDM6;
 	else if (chan->band_type == RTW89_BAND_2G)
 		lowest_rate = RTW89_HW_RATE_CCK1;
@@ -509,6 +510,21 @@ static u16 rtw89_core_get_mgmt_rate(struct rtw89_dev *rtwdev,
 		return lowest_rate;
 
 	return __ffs(vif->bss_conf.basic_rates) + lowest_rate;
+}
+
+static u8 rtw89_core_tx_get_mac_id(struct rtw89_dev *rtwdev,
+				   struct rtw89_core_tx_request *tx_req)
+{
+	struct ieee80211_vif *vif = tx_req->vif;
+	struct rtw89_vif *rtwvif = (struct rtw89_vif *)vif->drv_priv;
+	struct ieee80211_sta *sta = tx_req->sta;
+	struct rtw89_sta *rtwsta;
+
+	if (!sta)
+		return rtwvif->mac_id;
+
+	rtwsta = (struct rtw89_sta *)sta->drv_priv;
+	return rtwsta->mac_id;
 }
 
 static void
@@ -527,6 +543,7 @@ rtw89_core_tx_update_mgmt_info(struct rtw89_dev *rtwdev,
 	desc_info->qsel = qsel;
 	desc_info->ch_dma = ch_dma;
 	desc_info->port = desc_info->hiq ? rtwvif->port : 0;
+	desc_info->mac_id = rtw89_core_tx_get_mac_id(rtwdev, tx_req);
 	desc_info->hw_ssn_sel = RTW89_MGMT_HW_SSN_SEL;
 	desc_info->hw_seq_mode = RTW89_MGMT_HW_SEQ_MODE;
 
@@ -667,21 +684,6 @@ desc_bk:
 
 	rtwvif->last_a_ctrl = desc_info->a_ctrl_bsr;
 	desc_info->bk = true;
-}
-
-static u8 rtw89_core_tx_get_mac_id(struct rtw89_dev *rtwdev,
-				   struct rtw89_core_tx_request *tx_req)
-{
-	struct ieee80211_vif *vif = tx_req->vif;
-	struct rtw89_vif *rtwvif = (struct rtw89_vif *)vif->drv_priv;
-	struct ieee80211_sta *sta = tx_req->sta;
-	struct rtw89_sta *rtwsta;
-
-	if (!sta)
-		return rtwvif->mac_id;
-
-	rtwsta = (struct rtw89_sta *)sta->drv_priv;
-	return rtwsta->mac_id;
 }
 
 static void
@@ -3135,6 +3137,8 @@ int rtw89_core_init(struct rtw89_dev *rtwdev)
 	INIT_DELAYED_WORK(&rtwdev->cfo_track_work, rtw89_phy_cfo_track_work);
 	INIT_DELAYED_WORK(&rtwdev->forbid_ba_work, rtw89_forbid_ba_work);
 	rtwdev->txq_wq = alloc_workqueue("rtw89_tx_wq", WQ_UNBOUND | WQ_HIGHPRI, 0);
+	if (!rtwdev->txq_wq)
+		return -ENOMEM;
 	spin_lock_init(&rtwdev->ba_lock);
 	spin_lock_init(&rtwdev->rpwm_lock);
 	mutex_init(&rtwdev->mutex);
@@ -3160,6 +3164,7 @@ int rtw89_core_init(struct rtw89_dev *rtwdev)
 	ret = rtw89_load_firmware(rtwdev);
 	if (ret) {
 		rtw89_warn(rtwdev, "no firmware loaded\n");
+		destroy_workqueue(rtwdev->txq_wq);
 		return ret;
 	}
 	rtw89_ser_init(rtwdev);

@@ -1035,7 +1035,7 @@ static void rtw8852a_spur_elimination(struct rtw89_dev *rtwdev, u8 central_ch)
 				       0x210);
 		rtw89_phy_write32_mask(rtwdev, R_P1_NBIIDX, B_P1_NBIIDX_VAL,
 				       0x210);
-		rtw89_phy_write32_mask(rtwdev, R_SEG0CSI, 0xfff, 0x7c0);
+		rtw89_phy_write32_mask(rtwdev, R_SEG0CSI, B_SEG0CSI_IDX, 0x7c0);
 		rtw89_phy_write32_mask(rtwdev, R_P0_NBIIDX,
 				       B_P0_NBIIDX_NOTCH_EN, 0x1);
 		rtw89_phy_write32_mask(rtwdev, R_P1_NBIIDX,
@@ -1047,7 +1047,7 @@ static void rtw8852a_spur_elimination(struct rtw89_dev *rtwdev, u8 central_ch)
 				       0x210);
 		rtw89_phy_write32_mask(rtwdev, R_P1_NBIIDX, B_P1_NBIIDX_VAL,
 				       0x210);
-		rtw89_phy_write32_mask(rtwdev, R_SEG0CSI, 0xfff, 0x40);
+		rtw89_phy_write32_mask(rtwdev, R_SEG0CSI, B_SEG0CSI_IDX, 0x40);
 		rtw89_phy_write32_mask(rtwdev, R_P0_NBIIDX,
 				       B_P0_NBIIDX_NOTCH_EN, 0x1);
 		rtw89_phy_write32_mask(rtwdev, R_P1_NBIIDX,
@@ -1059,7 +1059,7 @@ static void rtw8852a_spur_elimination(struct rtw89_dev *rtwdev, u8 central_ch)
 				       0x2d0);
 		rtw89_phy_write32_mask(rtwdev, R_P1_NBIIDX, B_P1_NBIIDX_VAL,
 				       0x2d0);
-		rtw89_phy_write32_mask(rtwdev, R_SEG0CSI, 0xfff, 0x740);
+		rtw89_phy_write32_mask(rtwdev, R_SEG0CSI, B_SEG0CSI_IDX, 0x740);
 		rtw89_phy_write32_mask(rtwdev, R_P0_NBIIDX,
 				       B_P0_NBIIDX_NOTCH_EN, 0x1);
 		rtw89_phy_write32_mask(rtwdev, R_P1_NBIIDX,
@@ -1878,8 +1878,12 @@ static
 void rtw8852a_btc_update_bt_cnt(struct rtw89_dev *rtwdev)
 {
 	struct rtw89_btc *btc = &rtwdev->btc;
+	const struct rtw89_btc_ver *ver = btc->ver;
 	struct rtw89_btc_cx *cx = &btc->cx;
 	u32 val;
+
+	if (ver->fcxbtcrpt != 1)
+		return;
 
 	val = rtw89_read32(rtwdev, R_AX_BT_STAST_HIGH);
 	cx->cnt_bt[BTC_BCNT_HIPRI_TX] = FIELD_GET(B_AX_STATIS_BT_HI_TX_MASK, val);
