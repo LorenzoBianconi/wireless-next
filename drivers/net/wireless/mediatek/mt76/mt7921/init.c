@@ -91,6 +91,9 @@ static int mt7921_thermal_init(struct mt7921_phy *phy)
 	struct device *hwmon;
 	const char *name;
 
+	if (!IS_REACHABLE(CONFIG_HWMON))
+		return 0;
+
 	name = devm_kasprintf(&wiphy->dev, GFP_KERNEL, "mt7921_%s",
 			      wiphy_name(wiphy));
 
