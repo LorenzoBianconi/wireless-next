@@ -378,8 +378,9 @@ F:	drivers/acpi/viot.c
 F:	include/linux/acpi_viot.h
 
 ACPI WMI DRIVER
+M:	Armin Wolf <W_Armin@gmx.de>
 L:	platform-driver-x86@vger.kernel.org
-S:	Orphan
+S:	Maintained
 F:	Documentation/driver-api/wmi.rst
 F:	Documentation/wmi/
 F:	drivers/platform/x86/wmi.c
@@ -2391,7 +2392,6 @@ F:	drivers/memory/atmel*
 F:	drivers/watchdog/sama5d4_wdt.c
 F:	include/soc/at91/
 X:	drivers/input/touchscreen/atmel_mxt_ts.c
-X:	drivers/net/wireless/atmel/
 N:	at91
 N:	atmel
 
@@ -3283,13 +3283,6 @@ T:	git git://github.com/ndyer/linux.git
 F:	Documentation/devicetree/bindings/input/atmel,maxtouch.yaml
 F:	drivers/input/touchscreen/atmel_mxt_ts.c
 
-ATMEL WIRELESS DRIVER
-L:	linux-wireless@vger.kernel.org
-S:	Orphan
-W:	http://www.thekelleys.org.uk/atmel
-W:	http://atmelwlandriver.sourceforge.net/
-F:	drivers/net/wireless/atmel/atmel*
-
 ATOMIC INFRASTRUCTURE
 M:	Will Deacon <will@kernel.org>
 M:	Peter Zijlstra <peterz@infradead.org>
@@ -3794,6 +3787,15 @@ BPF [MISC]
 L:	bpf@vger.kernel.org
 S:	Odd Fixes
 K:	(?:\b|_)bpf(?:\b|_)
+
+BPF [NETKIT] (BPF-programmable network device)
+M:	Daniel Borkmann <daniel@iogearbox.net>
+M:	Nikolay Aleksandrov <razor@blackwall.org>
+L:	bpf@vger.kernel.org
+L:	netdev@vger.kernel.org
+S:	Supported
+F:	drivers/net/netkit.c
+F:	include/net/netkit.h
 
 BPF [NETWORKING] (struct_ops, reuseport)
 M:	Martin KaFai Lau <martin.lau@linux.dev>
@@ -6769,7 +6771,7 @@ F:	drivers/gpu/drm/panel/panel-sitronix-st7701.c
 DRM DRIVER FOR SITRONIX ST7703 PANELS
 M:	Guido Günther <agx@sigxcpu.org>
 R:	Purism Kernel Team <kernel@puri.sm>
-R:	Ondrej Jirman <megous@megous.com>
+R:	Ondrej Jirman <megi@xff.cz>
 S:	Maintained
 F:	Documentation/devicetree/bindings/display/panel/rocktech,jh057n00900.yaml
 F:	drivers/gpu/drm/panel/panel-sitronix-st7703.c
@@ -8114,7 +8116,7 @@ F:	include/linux/arm_ffa.h
 
 FIRMWARE LOADER (request_firmware)
 M:	Luis Chamberlain <mcgrof@kernel.org>
-M:	Russ Weight <russell.h.weight@intel.com>
+M:	Russ Weight <russ.weight@linux.dev>
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
 F:	Documentation/firmware_class/
@@ -9551,11 +9553,6 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/iio/pressure/honeywell,mprls0025pa.yaml
 F:	drivers/iio/pressure/mprls0025pa.c
 
-HOST AP DRIVER
-L:	linux-wireless@vger.kernel.org
-S:	Obsolete
-F:	drivers/net/wireless/intersil/hostap/
-
 HP BIOSCFG DRIVER
 M:	Jorge Lopez <jorge.lopez2@hp.com>
 L:	platform-driver-x86@vger.kernel.org
@@ -10454,7 +10451,6 @@ F:	drivers/platform/x86/intel/atomisp2/led.c
 
 INTEL BIOS SAR INT1092 DRIVER
 M:	Shravan Sudhakar <s.shravan@intel.com>
-M:	Intel Corporation <linuxwwan@intel.com>
 L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
 F:	drivers/platform/x86/intel/int1092/
@@ -10884,7 +10880,6 @@ F:	drivers/platform/x86/intel/wmi/thunderbolt.c
 
 INTEL WWAN IOSM DRIVER
 M:	M Chetan Kumar <m.chetan.kumar@intel.com>
-M:	Intel Corporation <linuxwwan@intel.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
 F:	drivers/net/wwan/iosm/
@@ -13505,7 +13500,6 @@ F:	net/dsa/tag_mtk.c
 
 MEDIATEK T7XX 5G WWAN MODEM DRIVER
 M:	Chandrashekar Devegowda <chandrashekar.devegowda@intel.com>
-M:	Intel Corporation <linuxwwan@intel.com>
 R:	Chiranjeevi Rapolu <chiranjeevi.rapolu@linux.intel.com>
 R:	Liu Haijun <haijun.liu@mediatek.com>
 R:	M Chetan Kumar <m.chetan.kumar@linux.intel.com>
@@ -14960,10 +14954,11 @@ W:	https://github.com/multipath-tcp/mptcp_net-next/wiki
 B:	https://github.com/multipath-tcp/mptcp_net-next/issues
 T:	git https://github.com/multipath-tcp/mptcp_net-next.git export-net
 T:	git https://github.com/multipath-tcp/mptcp_net-next.git export
+F:	Documentation/netlink/specs/mptcp.yaml
 F:	Documentation/networking/mptcp-sysctl.rst
 F:	include/net/mptcp.h
 F:	include/trace/events/mptcp.h
-F:	include/uapi/linux/mptcp.h
+F:	include/uapi/linux/mptcp*.h
 F:	net/mptcp/
 F:	tools/testing/selftests/bpf/*/*mptcp*.c
 F:	tools/testing/selftests/net/mptcp/
@@ -15136,7 +15131,7 @@ NOLIBC HEADER FILE
 M:	Willy Tarreau <w@1wt.eu>
 M:	Thomas Weißschuh <linux@weissschuh.net>
 S:	Maintained
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wtarreau/nolibc.git
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/nolibc/linux-nolibc.git
 F:	tools/include/nolibc/
 F:	tools/testing/selftests/nolibc/
 
@@ -16072,13 +16067,6 @@ S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/hubcap/linux.git
 F:	Documentation/filesystems/orangefs.rst
 F:	fs/orangefs/
-
-ORINOCO DRIVER
-L:	linux-wireless@vger.kernel.org
-S:	Orphan
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/orinoco
-W:	http://www.nongnu.org/orinoco/
-F:	drivers/net/wireless/intersil/orinoco/
 
 OV2659 OMNIVISION SENSOR DRIVER
 M:	"Lad, Prabhakar" <prabhakar.csengg@gmail.com>
@@ -17932,7 +17920,6 @@ F:	arch/mips/boot/dts/ralink/mt7621*
 
 RALINK RT2X00 WIRELESS LAN DRIVER
 M:	Stanislaw Gruszka <stf_xl@wp.pl>
-M:	Helmut Schaa <helmut.schaa@googlemail.com>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
 F:	drivers/net/wireless/ralink/rt2x00/
@@ -17973,11 +17960,6 @@ F:	Documentation/admin-guide/ras.rst
 F:	drivers/ras/
 F:	include/linux/ras.h
 F:	include/ras/ras_event.h
-
-RAYLINK/WEBGEAR 802.11 WIRELESS LAN DRIVER
-L:	linux-wireless@vger.kernel.org
-S:	Orphan
-F:	drivers/net/wireless/legacy/ray*
 
 RC-CORE / LIRC FRAMEWORK
 M:	Sean Young <sean@mess.org>
@@ -22435,23 +22417,12 @@ F:	drivers/usb/gadget/function/*uvc*
 F:	drivers/usb/gadget/legacy/webcam.c
 F:	include/uapi/linux/usb/g_uvc.h
 
-USB WIRELESS RNDIS DRIVER (rndis_wlan)
-L:	linux-wireless@vger.kernel.org
-S:	Orphan
-F:	drivers/net/wireless/legacy/rndis_wlan.c
-
 USB XHCI DRIVER
 M:	Mathias Nyman <mathias.nyman@intel.com>
 L:	linux-usb@vger.kernel.org
 S:	Supported
 F:	drivers/usb/host/pci-quirks*
 F:	drivers/usb/host/xhci*
-
-USB ZD1201 DRIVER
-L:	linux-wireless@vger.kernel.org
-S:	Orphan
-W:	http://linux-lc100020.sourceforge.net
-F:	drivers/net/wireless/zydas/zd1201.*
 
 USER DATAGRAM PROTOCOL (UDP)
 M:	Willem de Bruijn <willemdebruijn.kernel@gmail.com>
@@ -23040,7 +23011,7 @@ F:	drivers/scsi/vmw_pvscsi.c
 F:	drivers/scsi/vmw_pvscsi.h
 
 VMWARE VIRTUAL PTP CLOCK DRIVER
-M:	Deep Shah <sdeep@vmware.com>
+M:	Jeff Sipek <jsipek@vmware.com>
 R:	Ajay Kaher <akaher@vmware.com>
 R:	Alexey Makhalov <amakhalov@vmware.com>
 R:	VMware PV-Drivers Reviewers <pv-drivers@vmware.com>
@@ -23259,11 +23230,6 @@ WISTRON LAPTOP BUTTON DRIVER
 M:	Miloslav Trmac <mitr@volny.cz>
 S:	Maintained
 F:	drivers/input/misc/wistron_btns.c
-
-WL3501 WIRELESS PCMCIA CARD DRIVER
-L:	linux-wireless@vger.kernel.org
-S:	Orphan
-F:	drivers/net/wireless/legacy/wl3501*
 
 WMI BINARY MOF DRIVER
 M:	Armin Wolf <W_Armin@gmx.de>
