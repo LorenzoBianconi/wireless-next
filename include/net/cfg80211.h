@@ -52,7 +52,7 @@
  * such wiphy can have zero, one, or many virtual interfaces associated with
  * it, which need to be identified as such by pointing the network interface's
  * @ieee80211_ptr pointer to a &struct wireless_dev which further describes
- * the wireless part of the interface, normally this struct is embedded in the
+ * the wireless part of the interface. Normally this struct is embedded in the
  * network interface's private data area. Drivers can optionally allow creating
  * or destroying virtual interfaces on the fly, but without at least one or the
  * ability to create some the wireless device isn't useful.
@@ -2584,7 +2584,7 @@ struct cfg80211_scan_info {
  * @short_ssid: short ssid to scan for
  * @bssid: bssid to scan for
  * @channel_idx: idx of the channel in the channel array in the scan request
- *	 which the above info relvant to
+ *	 which the above info is relevant to
  * @unsolicited_probe: the AP transmits unsolicited probe response every 20 TU
  * @short_ssid_valid: @short_ssid is valid and can be used
  * @psc_no_listen: when set, and the channel is a PSC channel, no need to wait
@@ -7166,6 +7166,23 @@ int cfg80211_get_ies_channel_number(const u8 *ie, size_t ielen,
 				    enum nl80211_band band);
 
 /**
+ * cfg80211_ssid_eq - compare two SSIDs
+ * @a: first SSID
+ * @b: second SSID
+ *
+ * Return: %true if SSIDs are equal, %false otherwise.
+ */
+static inline bool
+cfg80211_ssid_eq(struct cfg80211_ssid *a, struct cfg80211_ssid *b)
+{
+	if (WARN_ON(!a || !b))
+		return false;
+	if (a->ssid_len != b->ssid_len)
+		return false;
+	return memcmp(a->ssid, b->ssid, a->ssid_len) ? false : true;
+}
+
+/**
  * cfg80211_inform_bss_data - inform cfg80211 of a new BSS
  *
  * @wiphy: the wiphy reporting the BSS
@@ -7504,7 +7521,7 @@ void cfg80211_notify_new_peer_candidate(struct net_device *dev,
  * RFkill integration in cfg80211 is almost invisible to drivers,
  * as cfg80211 automatically registers an rfkill instance for each
  * wireless device it knows about. Soft kill is also translated
- * into disconnecting and turning all interfaces off, drivers are
+ * into disconnecting and turning all interfaces off. Drivers are
  * expected to turn off the device when all interfaces are down.
  *
  * However, devices may have a hard RFkill line, in which case they
@@ -7552,7 +7569,7 @@ static inline void wiphy_rfkill_stop_polling(struct wiphy *wiphy)
  * the configuration mechanism.
  *
  * A driver supporting vendor commands must register them as an array
- * in struct wiphy, with handlers for each one, each command has an
+ * in struct wiphy, with handlers for each one. Each command has an
  * OUI and sub command ID to identify it.
  *
  * Note that this feature should not be (ab)used to implement protocol
@@ -7716,7 +7733,7 @@ static inline void cfg80211_vendor_event(struct sk_buff *skb, gfp_t gfp)
  * interact with driver-specific tools to aid, for instance,
  * factory programming.
  *
- * This chapter describes how drivers interact with it, for more
+ * This chapter describes how drivers interact with it. For more
  * information see the nl80211 book's chapter on it.
  */
 
@@ -9374,5 +9391,51 @@ bool cfg80211_valid_disable_subchannel_bitmap(u16 *bitmap,
  * Also note that the wdev mutex must be held.
  */
 void cfg80211_links_removed(struct net_device *dev, u16 link_mask);
+
+#ifdef CONFIG_CFG80211_DEBUGFS
+/**
+ * wiphy_locked_debugfs_read - do a locked read in debugfs
+ * @wiphy: the wiphy to use
+ * @file: the file being read
+ * @buf: the buffer to fill and then read from
+ * @bufsize: size of the buffer
+ * @userbuf: the user buffer to copy to
+ * @count: read count
+ * @ppos: read position
+ * @handler: the read handler to call (under wiphy lock)
+ * @data: additional data to pass to the read handler
+ */
+ssize_t wiphy_locked_debugfs_read(struct wiphy *wiphy, struct file *file,
+				  char *buf, size_t bufsize,
+				  char __user *userbuf, size_t count,
+				  loff_t *ppos,
+				  ssize_t (*handler)(struct wiphy *wiphy,
+						     struct file *file,
+						     char *buf,
+						     size_t bufsize,
+						     void *data),
+				  void *data);
+
+/**
+ * wiphy_locked_debugfs_write - do a locked write in debugfs
+ * @wiphy: the wiphy to use
+ * @file: the file being written to
+ * @buf: the buffer to copy the user data to
+ * @bufsize: size of the buffer
+ * @userbuf: the user buffer to copy from
+ * @count: read count
+ * @handler: the write handler to call (under wiphy lock)
+ * @data: additional data to pass to the write handler
+ */
+ssize_t wiphy_locked_debugfs_write(struct wiphy *wiphy, struct file *file,
+				   char *buf, size_t bufsize,
+				   const char __user *userbuf, size_t count,
+				   ssize_t (*handler)(struct wiphy *wiphy,
+						      struct file *file,
+						      char *buf,
+						      size_t count,
+						      void *data),
+				   void *data);
+#endif
 
 #endif /* __NET_CFG80211_H */
