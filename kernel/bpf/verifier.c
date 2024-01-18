@@ -195,6 +195,8 @@ struct bpf_verifier_stack_elem {
 					  POISON_POINTER_DELTA))
 #define BPF_MAP_PTR(X)		((struct bpf_map *)((X) & ~BPF_MAP_PTR_UNPRIV))
 
+#define BPF_GLOBAL_PERCPU_MA_MAX_SIZE  512
+
 static int acquire_reference_state(struct bpf_verifier_env *env, int insn_idx);
 static int release_reference(struct bpf_verifier_env *env, int ref_obj_id);
 static void invalidate_non_owning_refs(struct bpf_verifier_env *env);
@@ -435,16 +437,6 @@ static const char *subprog_name(const struct bpf_verifier_env *env, int subprog)
 
 	info = &env->prog->aux->func_info[subprog];
 	return btf_type_name(env->prog->aux->btf, info->type_id);
-}
-
-static struct bpf_func_info_aux *subprog_aux(const struct bpf_verifier_env *env, int subprog)
-{
-	return &env->prog->aux->func_info_aux[subprog];
-}
-
-static struct bpf_subprog_info *subprog_info(struct bpf_verifier_env *env, int subprog)
-{
-	return &env->subprog_info[subprog];
 }
 
 static void mark_subprog_exc_cb(struct bpf_verifier_env *env, int subprog)
@@ -5137,8 +5129,8 @@ static int __check_ptr_off_reg(struct bpf_verifier_env *env,
 	return 0;
 }
 
-int check_ptr_off_reg(struct bpf_verifier_env *env,
-		      const struct bpf_reg_state *reg, int regno)
+static int check_ptr_off_reg(struct bpf_verifier_env *env,
+		             const struct bpf_reg_state *reg, int regno)
 {
 	return __check_ptr_off_reg(env, reg, regno, false);
 }
@@ -7289,12 +7281,10 @@ static int check_mem_size_reg(struct bpf_verifier_env *env,
 		return -EACCES;
 	}
 
-	if (reg->umin_value == 0) {
-		err = check_helper_mem_access(env, regno - 1, 0,
-					      zero_size_allowed,
-					      meta);
-		if (err)
-			return err;
+	if (reg->umin_value == 0 && !zero_size_allowed) {
+		verbose(env, "R%d invalid zero-sized read: u64=[%lld,%lld]\n",
+			regno, reg->umin_value, reg->umax_value);
+		return -EACCES;
 	}
 
 	if (reg->umax_value >= BPF_MAX_VAR_SIZ) {
@@ -7310,8 +7300,8 @@ static int check_mem_size_reg(struct bpf_verifier_env *env,
 	return err;
 }
 
-int check_mem_reg(struct bpf_verifier_env *env, struct bpf_reg_state *reg,
-		   u32 regno, u32 mem_size)
+static int check_mem_reg(struct bpf_verifier_env *env, struct bpf_reg_state *reg,
+			 u32 regno, u32 mem_size)
 {
 	bool may_be_null = type_may_be_null(reg->type);
 	struct bpf_reg_state saved_reg;
@@ -8296,9 +8286,9 @@ reg_find_field_offset(const struct bpf_reg_state *reg, s32 off, u32 fields)
 	return field;
 }
 
-int check_func_arg_reg_off(struct bpf_verifier_env *env,
-			   const struct bpf_reg_state *reg, int regno,
-			   enum bpf_arg_type arg_type)
+static int check_func_arg_reg_off(struct bpf_verifier_env *env,
+				  const struct bpf_reg_state *reg, int regno,
+				  enum bpf_arg_type arg_type)
 {
 	u32 type = reg->type;
 
@@ -9259,6 +9249,102 @@ err_out:
 	return err;
 }
 
+static int btf_check_func_arg_match(struct bpf_verifier_env *env, int subprog,
+				    const struct btf *btf,
+				    struct bpf_reg_state *regs)
+{
+	struct bpf_subprog_info *sub = subprog_info(env, subprog);
+	struct bpf_verifier_log *log = &env->log;
+	u32 i;
+	int ret;
+
+	ret = btf_prepare_func_args(env, subprog);
+	if (ret)
+		return ret;
+
+	/* check that BTF function arguments match actual types that the
+	 * verifier sees.
+	 */
+	for (i = 0; i < sub->arg_cnt; i++) {
+		u32 regno = i + 1;
+		struct bpf_reg_state *reg = &regs[regno];
+		struct bpf_subprog_arg_info *arg = &sub->args[i];
+
+		if (arg->arg_type == ARG_ANYTHING) {
+			if (reg->type != SCALAR_VALUE) {
+				bpf_log(log, "R%d is not a scalar\n", regno);
+				return -EINVAL;
+			}
+		} else if (arg->arg_type == ARG_PTR_TO_CTX) {
+			ret = check_func_arg_reg_off(env, reg, regno, ARG_DONTCARE);
+			if (ret < 0)
+				return ret;
+			/* If function expects ctx type in BTF check that caller
+			 * is passing PTR_TO_CTX.
+			 */
+			if (reg->type != PTR_TO_CTX) {
+				bpf_log(log, "arg#%d expects pointer to ctx\n", i);
+				return -EINVAL;
+			}
+		} else if (base_type(arg->arg_type) == ARG_PTR_TO_MEM) {
+			ret = check_func_arg_reg_off(env, reg, regno, ARG_DONTCARE);
+			if (ret < 0)
+				return ret;
+			if (check_mem_reg(env, reg, regno, arg->mem_size))
+				return -EINVAL;
+			if (!(arg->arg_type & PTR_MAYBE_NULL) && (reg->type & PTR_MAYBE_NULL)) {
+				bpf_log(log, "arg#%d is expected to be non-NULL\n", i);
+				return -EINVAL;
+			}
+		} else if (arg->arg_type == (ARG_PTR_TO_DYNPTR | MEM_RDONLY)) {
+			ret = process_dynptr_func(env, regno, -1, arg->arg_type, 0);
+			if (ret)
+				return ret;
+		} else {
+			bpf_log(log, "verifier bug: unrecognized arg#%d type %d\n",
+				i, arg->arg_type);
+			return -EFAULT;
+		}
+	}
+
+	return 0;
+}
+
+/* Compare BTF of a function call with given bpf_reg_state.
+ * Returns:
+ * EFAULT - there is a verifier bug. Abort verification.
+ * EINVAL - there is a type mismatch or BTF is not available.
+ * 0 - BTF matches with what bpf_reg_state expects.
+ * Only PTR_TO_CTX and SCALAR_VALUE states are recognized.
+ */
+static int btf_check_subprog_call(struct bpf_verifier_env *env, int subprog,
+				  struct bpf_reg_state *regs)
+{
+	struct bpf_prog *prog = env->prog;
+	struct btf *btf = prog->aux->btf;
+	u32 btf_id;
+	int err;
+
+	if (!prog->aux->func_info)
+		return -EINVAL;
+
+	btf_id = prog->aux->func_info[subprog].type_id;
+	if (!btf_id)
+		return -EFAULT;
+
+	if (prog->aux->func_info_aux[subprog].unreliable)
+		return -EINVAL;
+
+	err = btf_check_func_arg_match(env, subprog, btf, regs);
+	/* Compiler optimizations can remove arguments from static functions
+	 * or mismatched type can be passed into a global function.
+	 * In such cases mark the function as unreliable from BTF point of view.
+	 */
+	if (err)
+		prog->aux->func_info_aux[subprog].unreliable = true;
+	return err;
+}
+
 static int push_callback_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 			      int insn_idx, int subprog,
 			      set_callee_state_fn set_callee_state_cb)
@@ -9530,7 +9616,7 @@ static int set_find_vma_callback_state(struct bpf_verifier_env *env,
 	callee->regs[BPF_REG_2].type = PTR_TO_BTF_ID;
 	__mark_reg_known_zero(&callee->regs[BPF_REG_2]);
 	callee->regs[BPF_REG_2].btf =  btf_vmlinux;
-	callee->regs[BPF_REG_2].btf_id = btf_tracing_ids[BTF_TRACING_TYPE_VMA],
+	callee->regs[BPF_REG_2].btf_id = btf_tracing_ids[BTF_TRACING_TYPE_VMA];
 
 	/* pointer to stack or null */
 	callee->regs[BPF_REG_3] = caller->regs[BPF_REG_4];
@@ -12055,20 +12141,6 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 				if (meta.func_id == special_kfunc_list[KF_bpf_obj_new_impl] && !bpf_global_ma_set)
 					return -ENOMEM;
 
-				if (meta.func_id == special_kfunc_list[KF_bpf_percpu_obj_new_impl]) {
-					if (!bpf_global_percpu_ma_set) {
-						mutex_lock(&bpf_percpu_ma_lock);
-						if (!bpf_global_percpu_ma_set) {
-							err = bpf_mem_alloc_init(&bpf_global_percpu_ma, 0, true);
-							if (!err)
-								bpf_global_percpu_ma_set = true;
-						}
-						mutex_unlock(&bpf_percpu_ma_lock);
-						if (err)
-							return err;
-					}
-				}
-
 				if (((u64)(u32)meta.arg_constant.value) != meta.arg_constant.value) {
 					verbose(env, "local type ID argument must be in range [0, U32_MAX]\n");
 					return -EINVAL;
@@ -12087,6 +12159,35 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 				if (!ret_t || !__btf_type_is_struct(ret_t)) {
 					verbose(env, "bpf_obj_new/bpf_percpu_obj_new type ID argument must be of a struct\n");
 					return -EINVAL;
+				}
+
+				if (meta.func_id == special_kfunc_list[KF_bpf_percpu_obj_new_impl]) {
+					if (ret_t->size > BPF_GLOBAL_PERCPU_MA_MAX_SIZE) {
+						verbose(env, "bpf_percpu_obj_new type size (%d) is greater than %d\n",
+							ret_t->size, BPF_GLOBAL_PERCPU_MA_MAX_SIZE);
+						return -EINVAL;
+					}
+
+					if (!bpf_global_percpu_ma_set) {
+						mutex_lock(&bpf_percpu_ma_lock);
+						if (!bpf_global_percpu_ma_set) {
+							/* Charge memory allocated with bpf_global_percpu_ma to
+							 * root memcg. The obj_cgroup for root memcg is NULL.
+							 */
+							err = bpf_mem_alloc_percpu_init(&bpf_global_percpu_ma, NULL);
+							if (!err)
+								bpf_global_percpu_ma_set = true;
+						}
+						mutex_unlock(&bpf_percpu_ma_lock);
+						if (err)
+							return err;
+					}
+
+					mutex_lock(&bpf_percpu_ma_lock);
+					err = bpf_mem_alloc_percpu_unit_init(&bpf_global_percpu_ma, ret_t->size);
+					mutex_unlock(&bpf_percpu_ma_lock);
+					if (err)
+						return err;
 				}
 
 				struct_meta = btf_find_struct_meta(ret_btf, ret_btf_id);
@@ -14336,7 +14437,43 @@ again:
 		}
 		break;
 	case BPF_JNE:
-		/* we don't derive any new information for inequality yet */
+		if (!is_reg_const(reg2, is_jmp32))
+			swap(reg1, reg2);
+		if (!is_reg_const(reg2, is_jmp32))
+			break;
+
+		/* try to recompute the bound of reg1 if reg2 is a const and
+		 * is exactly the edge of reg1.
+		 */
+		val = reg_const_value(reg2, is_jmp32);
+		if (is_jmp32) {
+			/* u32_min_value is not equal to 0xffffffff at this point,
+			 * because otherwise u32_max_value is 0xffffffff as well,
+			 * in such a case both reg1 and reg2 would be constants,
+			 * jump would be predicted and reg_set_min_max() won't
+			 * be called.
+			 *
+			 * Same reasoning works for all {u,s}{min,max}{32,64} cases
+			 * below.
+			 */
+			if (reg1->u32_min_value == (u32)val)
+				reg1->u32_min_value++;
+			if (reg1->u32_max_value == (u32)val)
+				reg1->u32_max_value--;
+			if (reg1->s32_min_value == (s32)val)
+				reg1->s32_min_value++;
+			if (reg1->s32_max_value == (s32)val)
+				reg1->s32_max_value--;
+		} else {
+			if (reg1->umin_value == (u64)val)
+				reg1->umin_value++;
+			if (reg1->umax_value == (u64)val)
+				reg1->umax_value--;
+			if (reg1->smin_value == (s64)val)
+				reg1->smin_value++;
+			if (reg1->smax_value == (s64)val)
+				reg1->smax_value--;
+		}
 		break;
 	case BPF_JSET:
 		if (!is_reg_const(reg2, is_jmp32))
@@ -19873,6 +20010,7 @@ static void free_states(struct bpf_verifier_env *env)
 static int do_check_common(struct bpf_verifier_env *env, int subprog)
 {
 	bool pop_log = !(env->log.level & BPF_LOG_LEVEL2);
+	struct bpf_subprog_info *sub = subprog_info(env, subprog);
 	struct bpf_verifier_state *state;
 	struct bpf_reg_state *regs;
 	int ret, i;
@@ -19899,54 +20037,71 @@ static int do_check_common(struct bpf_verifier_env *env, int subprog)
 	state->first_insn_idx = env->subprog_info[subprog].start;
 	state->last_insn_idx = -1;
 
+
 	regs = state->frame[state->curframe]->regs;
 	if (subprog || env->prog->type == BPF_PROG_TYPE_EXT) {
-		u32 nargs;
+		const char *sub_name = subprog_name(env, subprog);
+		struct bpf_subprog_arg_info *arg;
+		struct bpf_reg_state *reg;
 
-		ret = btf_prepare_func_args(env, subprog, regs, &nargs);
+		verbose(env, "Validating %s() func#%d...\n", sub_name, subprog);
+		ret = btf_prepare_func_args(env, subprog);
 		if (ret)
 			goto out;
+
 		if (subprog_is_exc_cb(env, subprog)) {
 			state->frame[0]->in_exception_callback_fn = true;
 			/* We have already ensured that the callback returns an integer, just
 			 * like all global subprogs. We need to determine it only has a single
 			 * scalar argument.
 			 */
-			if (nargs != 1 || regs[BPF_REG_1].type != SCALAR_VALUE) {
+			if (sub->arg_cnt != 1 || sub->args[0].arg_type != ARG_ANYTHING) {
 				verbose(env, "exception cb only supports single integer argument\n");
 				ret = -EINVAL;
 				goto out;
 			}
 		}
-		for (i = BPF_REG_1; i <= BPF_REG_5; i++) {
-			if (regs[i].type == PTR_TO_CTX)
-				mark_reg_known_zero(env, regs, i);
-			else if (regs[i].type == SCALAR_VALUE)
-				mark_reg_unknown(env, regs, i);
-			else if (base_type(regs[i].type) == PTR_TO_MEM) {
-				const u32 mem_size = regs[i].mem_size;
+		for (i = BPF_REG_1; i <= sub->arg_cnt; i++) {
+			arg = &sub->args[i - BPF_REG_1];
+			reg = &regs[i];
 
+			if (arg->arg_type == ARG_PTR_TO_CTX) {
+				reg->type = PTR_TO_CTX;
 				mark_reg_known_zero(env, regs, i);
-				regs[i].mem_size = mem_size;
-				regs[i].id = ++env->id_gen;
+			} else if (arg->arg_type == ARG_ANYTHING) {
+				reg->type = SCALAR_VALUE;
+				mark_reg_unknown(env, regs, i);
+			} else if (arg->arg_type == (ARG_PTR_TO_DYNPTR | MEM_RDONLY)) {
+				/* assume unspecial LOCAL dynptr type */
+				__mark_dynptr_reg(reg, BPF_DYNPTR_TYPE_LOCAL, true, ++env->id_gen);
+			} else if (base_type(arg->arg_type) == ARG_PTR_TO_MEM) {
+				reg->type = PTR_TO_MEM;
+				if (arg->arg_type & PTR_MAYBE_NULL)
+					reg->type |= PTR_MAYBE_NULL;
+				mark_reg_known_zero(env, regs, i);
+				reg->mem_size = arg->mem_size;
+				reg->id = ++env->id_gen;
+			} else {
+				WARN_ONCE(1, "BUG: unhandled arg#%d type %d\n",
+					  i - BPF_REG_1, arg->arg_type);
+				ret = -EFAULT;
+				goto out;
 			}
 		}
 	} else {
+		/* if main BPF program has associated BTF info, validate that
+		 * it's matching expected signature, and otherwise mark BTF
+		 * info for main program as unreliable
+		 */
+		if (env->prog->aux->func_info_aux) {
+			ret = btf_prepare_func_args(env, 0);
+			if (ret || sub->arg_cnt != 1 || sub->args[0].arg_type != ARG_PTR_TO_CTX)
+				env->prog->aux->func_info_aux[0].unreliable = true;
+		}
+
 		/* 1st arg to a function */
 		regs[BPF_REG_1].type = PTR_TO_CTX;
 		mark_reg_known_zero(env, regs, BPF_REG_1);
-		ret = btf_check_subprog_arg_match(env, subprog, regs);
-		if (ret == -EFAULT)
-			/* unlikely verifier bug. abort.
-			 * ret == 0 and ret < 0 are sadly acceptable for
-			 * main() function due to backward compatibility.
-			 * Like socket filter program may be written as:
-			 * int bpf_prog(struct pt_regs *ctx)
-			 * and never dereference that ctx in the program.
-			 * 'struct pt_regs' is a type mismatch for socket
-			 * filter that should be using 'struct __sk_buff'.
-			 */
-			goto out;
 	}
 
 	ret = do_check(env);
@@ -20162,6 +20317,7 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 			    struct bpf_attach_target_info *tgt_info)
 {
 	bool prog_extension = prog->type == BPF_PROG_TYPE_EXT;
+	bool prog_tracing = prog->type == BPF_PROG_TYPE_TRACING;
 	const char prefix[] = "btf_trace_";
 	int ret = 0, subprog = -1, i;
 	const struct btf_type *t;
@@ -20232,10 +20388,21 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 			bpf_log(log, "Can attach to only JITed progs\n");
 			return -EINVAL;
 		}
-		if (tgt_prog->type == prog->type) {
-			/* Cannot fentry/fexit another fentry/fexit program.
-			 * Cannot attach program extension to another extension.
-			 * It's ok to attach fentry/fexit to extension program.
+		if (prog_tracing) {
+			if (aux->attach_tracing_prog) {
+				/*
+				 * Target program is an fentry/fexit which is already attached
+				 * to another tracing program. More levels of nesting
+				 * attachment are not allowed.
+				 */
+				bpf_log(log, "Cannot nest tracing program attach more than once\n");
+				return -EINVAL;
+			}
+		} else if (tgt_prog->type == prog->type) {
+			/*
+			 * To avoid potential call chain cycles, prevent attaching of a
+			 * program extension to another extension. It's ok to attach
+			 * fentry/fexit to extension program.
 			 */
 			bpf_log(log, "Cannot recursively attach\n");
 			return -EINVAL;
@@ -20248,16 +20415,15 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 			 * except fentry/fexit. The reason is the following.
 			 * The fentry/fexit programs are used for performance
 			 * analysis, stats and can be attached to any program
-			 * type except themselves. When extension program is
-			 * replacing XDP function it is necessary to allow
-			 * performance analysis of all functions. Both original
-			 * XDP program and its program extension. Hence
-			 * attaching fentry/fexit to BPF_PROG_TYPE_EXT is
-			 * allowed. If extending of fentry/fexit was allowed it
-			 * would be possible to create long call chain
-			 * fentry->extension->fentry->extension beyond
-			 * reasonable stack size. Hence extending fentry is not
-			 * allowed.
+			 * type. When extension program is replacing XDP function
+			 * it is necessary to allow performance analysis of all
+			 * functions. Both original XDP program and its program
+			 * extension. Hence attaching fentry/fexit to
+			 * BPF_PROG_TYPE_EXT is allowed. If extending of
+			 * fentry/fexit was allowed it would be possible to create
+			 * long call chain fentry->extension->fentry->extension
+			 * beyond reasonable stack size. Hence extending fentry
+			 * is not allowed.
 			 */
 			bpf_log(log, "Cannot extend fentry/fexit\n");
 			return -EINVAL;
@@ -20594,12 +20760,7 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr, bpfptr_t uattr, __u3
 	env->prog = *prog;
 	env->ops = bpf_verifier_ops[env->prog->type];
 	env->fd_array = make_bpfptr(attr->fd_array, uattr.is_kernel);
-
-	env->allow_ptr_leaks = bpf_allow_ptr_leaks(env->prog->aux->token);
-	env->allow_uninit_stack = bpf_allow_uninit_stack(env->prog->aux->token);
-	env->bypass_spec_v1 = bpf_bypass_spec_v1(env->prog->aux->token);
-	env->bypass_spec_v4 = bpf_bypass_spec_v4(env->prog->aux->token);
-	env->bpf_capable = is_priv = bpf_token_capable(env->prog->aux->token, CAP_BPF);
+	is_priv = bpf_capable();
 
 	bpf_get_btf_vmlinux();
 
@@ -20630,6 +20791,12 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr, bpfptr_t uattr, __u3
 		env->strict_alignment = true;
 	if (attr->prog_flags & BPF_F_ANY_ALIGNMENT)
 		env->strict_alignment = false;
+
+	env->allow_ptr_leaks = bpf_allow_ptr_leaks();
+	env->allow_uninit_stack = bpf_allow_uninit_stack();
+	env->bypass_spec_v1 = bpf_bypass_spec_v1();
+	env->bypass_spec_v4 = bpf_bypass_spec_v4();
+	env->bpf_capable = bpf_capable();
 
 	if (is_priv)
 		env->test_state_freq = attr->prog_flags & BPF_F_TEST_STATE_FREQ;

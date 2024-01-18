@@ -509,6 +509,13 @@ struct rtw89_phy_gen_def {
 	const struct rtw89_ccx_regs *ccx;
 	const struct rtw89_physts_regs *physts;
 	const struct rtw89_cfo_regs *cfo;
+	void (*config_bb_gain)(struct rtw89_dev *rtwdev,
+			       const struct rtw89_reg2_def *reg,
+			       enum rtw89_rf_path rf_path,
+			       void *extra_data);
+	void (*preinit_rf_nctl)(struct rtw89_dev *rtwdev);
+	void (*bb_wrap_init)(struct rtw89_dev *rtwdev);
+	void (*ch_info_init)(struct rtw89_dev *rtwdev);
 
 	void (*set_txpwr_byrate)(struct rtw89_dev *rtwdev,
 				 const struct rtw89_chan *chan,
@@ -664,6 +671,38 @@ enum rtw89_phy_bb_gain_band rtw89_subband_to_bb_gain_band(enum rtw89_subband sub
 	}
 }
 
+static inline
+enum rtw89_phy_gain_band_be rtw89_subband_to_gain_band_be(enum rtw89_subband subband)
+{
+	switch (subband) {
+	default:
+	case RTW89_CH_2G:
+		return RTW89_BB_GAIN_BAND_2G_BE;
+	case RTW89_CH_5G_BAND_1:
+		return RTW89_BB_GAIN_BAND_5G_L_BE;
+	case RTW89_CH_5G_BAND_3:
+		return RTW89_BB_GAIN_BAND_5G_M_BE;
+	case RTW89_CH_5G_BAND_4:
+		return RTW89_BB_GAIN_BAND_5G_H_BE;
+	case RTW89_CH_6G_BAND_IDX0:
+		return RTW89_BB_GAIN_BAND_6G_L0_BE;
+	case RTW89_CH_6G_BAND_IDX1:
+		return RTW89_BB_GAIN_BAND_6G_L1_BE;
+	case RTW89_CH_6G_BAND_IDX2:
+		return RTW89_BB_GAIN_BAND_6G_M0_BE;
+	case RTW89_CH_6G_BAND_IDX3:
+		return RTW89_BB_GAIN_BAND_6G_M1_BE;
+	case RTW89_CH_6G_BAND_IDX4:
+		return RTW89_BB_GAIN_BAND_6G_H0_BE;
+	case RTW89_CH_6G_BAND_IDX5:
+		return RTW89_BB_GAIN_BAND_6G_H1_BE;
+	case RTW89_CH_6G_BAND_IDX6:
+		return RTW89_BB_GAIN_BAND_6G_UH0_BE;
+	case RTW89_CH_6G_BAND_IDX7:
+		return RTW89_BB_GAIN_BAND_6G_UH1_BE;
+	}
+}
+
 enum rtw89_rfk_flag {
 	RTW89_RFK_F_WRF = 0,
 	RTW89_RFK_F_WM = 1,
@@ -758,6 +797,29 @@ s8 rtw89_phy_read_txpwr_limit(struct rtw89_dev *rtwdev, u8 band,
 			      u8 bw, u8 ntx, u8 rs, u8 bf, u8 ch);
 s8 rtw89_phy_read_txpwr_limit_ru(struct rtw89_dev *rtwdev, u8 band,
 				 u8 ru, u8 ntx, u8 ch);
+
+static inline void rtw89_phy_preinit_rf_nctl(struct rtw89_dev *rtwdev)
+{
+	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
+
+	phy->preinit_rf_nctl(rtwdev);
+}
+
+static inline void rtw89_phy_bb_wrap_init(struct rtw89_dev *rtwdev)
+{
+	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
+
+	if (phy->bb_wrap_init)
+		phy->bb_wrap_init(rtwdev);
+}
+
+static inline void rtw89_phy_ch_info_init(struct rtw89_dev *rtwdev)
+{
+	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
+
+	if (phy->ch_info_init)
+		phy->ch_info_init(rtwdev);
+}
 
 static inline
 void rtw89_phy_set_txpwr_byrate(struct rtw89_dev *rtwdev,

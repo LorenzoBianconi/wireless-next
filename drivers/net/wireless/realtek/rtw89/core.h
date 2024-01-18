@@ -32,6 +32,7 @@ extern const struct ieee80211_ops rtw89_ops;
 #define MASKDWORD 0xffffffff
 #define RFREG_MASK 0xfffff
 #define INV_RF_DATA 0xffffffff
+#define BYPASS_CR_DATA 0xbabecafe
 
 #define RTW89_TRACK_WORK_PERIOD	round_jiffies_relative(HZ * 2)
 #define RTW89_FORBID_BA_TIMER round_jiffies_relative(HZ * 4)
@@ -878,7 +879,7 @@ enum rtw89_ps_mode {
 #define RTW89_5G_BW_NUM (RTW89_CHANNEL_WIDTH_160 + 1)
 #define RTW89_6G_BW_NUM (RTW89_CHANNEL_WIDTH_320 + 1)
 #define RTW89_BYR_BW_NUM (RTW89_CHANNEL_WIDTH_320 + 1)
-#define RTW89_PPE_BW_NUM (RTW89_CHANNEL_WIDTH_160 + 1)
+#define RTW89_PPE_BW_NUM (RTW89_CHANNEL_WIDTH_320 + 1)
 
 enum rtw89_ru_bandwidth {
 	RTW89_RU26 = 0,
@@ -2875,7 +2876,7 @@ struct rtw89_ba_cam_entry {
 #define RTW89_MAX_ADDR_CAM_NUM		128
 #define RTW89_MAX_BSSID_CAM_NUM		20
 #define RTW89_MAX_SEC_CAM_NUM		128
-#define RTW89_MAX_BA_CAM_NUM		8
+#define RTW89_MAX_BA_CAM_NUM		24
 #define RTW89_SEC_CAM_IN_ADDR_CAM	7
 
 struct rtw89_addr_cam_entry {
@@ -2932,6 +2933,7 @@ struct rtw89_sta {
 	struct ewma_evm evm_min[RF_PATH_MAX];
 	struct ewma_evm evm_max[RF_PATH_MAX];
 	struct rtw89_ampdu_params ampdu_params[IEEE80211_NUM_TIDS];
+	DECLARE_BITMAP(ampdu_map, IEEE80211_NUM_TIDS);
 	struct ieee80211_rx_status rx_status;
 	u16 rx_hw_rate;
 	__le32 htc_template;
@@ -3196,6 +3198,22 @@ struct rtw89_chip_ops {
 	int (*h2c_dctl_sec_cam)(struct rtw89_dev *rtwdev,
 				struct rtw89_vif *rtwvif,
 				struct rtw89_sta *rtwsta);
+	int (*h2c_default_cmac_tbl)(struct rtw89_dev *rtwdev,
+				    struct rtw89_vif *rtwvif,
+				    struct rtw89_sta *rtwsta);
+	int (*h2c_assoc_cmac_tbl)(struct rtw89_dev *rtwdev,
+				  struct ieee80211_vif *vif,
+				  struct ieee80211_sta *sta);
+	int (*h2c_ampdu_cmac_tbl)(struct rtw89_dev *rtwdev,
+				  struct ieee80211_vif *vif,
+				  struct ieee80211_sta *sta);
+	int (*h2c_default_dmac_tbl)(struct rtw89_dev *rtwdev,
+				    struct rtw89_vif *rtwvif,
+				    struct rtw89_sta *rtwsta);
+	int (*h2c_update_beacon)(struct rtw89_dev *rtwdev,
+				 struct rtw89_vif *rtwvif);
+	int (*h2c_ba_cam)(struct rtw89_dev *rtwdev, struct rtw89_sta *rtwsta,
+			  bool valid, struct ieee80211_ampdu_params *params);
 
 	void (*btc_set_rfe)(struct rtw89_dev *rtwdev);
 	void (*btc_init_cfg)(struct rtw89_dev *rtwdev);
@@ -3713,7 +3731,7 @@ struct rtw89_chip_info {
 	u32 rf_base_addr[2];
 	u8 support_chanctx_num;
 	u8 support_bands;
-	bool support_bw160;
+	u16 support_bandwidths;
 	bool support_unii4;
 	bool ul_tb_waveform_ctrl;
 	bool ul_tb_pwr_diff;
@@ -3897,6 +3915,7 @@ enum rtw89_fw_feature {
 	RTW89_FW_FEATURE_NO_DEEP_PS,
 	RTW89_FW_FEATURE_NO_LPS_PG,
 	RTW89_FW_FEATURE_BEACON_FILTER,
+	RTW89_FW_FEATURE_MACID_PAUSE_SLEEP,
 };
 
 struct rtw89_fw_suit {
@@ -4605,6 +4624,48 @@ enum rtw89_phy_bb_gain_band {
 	RTW89_BB_GAIN_BAND_NR,
 };
 
+enum rtw89_phy_gain_band_be {
+	RTW89_BB_GAIN_BAND_2G_BE = 0,
+	RTW89_BB_GAIN_BAND_5G_L_BE = 1,
+	RTW89_BB_GAIN_BAND_5G_M_BE = 2,
+	RTW89_BB_GAIN_BAND_5G_H_BE = 3,
+	RTW89_BB_GAIN_BAND_6G_L0_BE = 4,
+	RTW89_BB_GAIN_BAND_6G_L1_BE = 5,
+	RTW89_BB_GAIN_BAND_6G_M0_BE = 6,
+	RTW89_BB_GAIN_BAND_6G_M1_BE = 7,
+	RTW89_BB_GAIN_BAND_6G_H0_BE = 8,
+	RTW89_BB_GAIN_BAND_6G_H1_BE = 9,
+	RTW89_BB_GAIN_BAND_6G_UH0_BE = 10,
+	RTW89_BB_GAIN_BAND_6G_UH1_BE = 11,
+
+	RTW89_BB_GAIN_BAND_NR_BE,
+};
+
+enum rtw89_phy_bb_bw_be {
+	RTW89_BB_BW_20_40 = 0,
+	RTW89_BB_BW_80_160_320 = 1,
+
+	RTW89_BB_BW_NR_BE,
+};
+
+enum rtw89_bw20_sc {
+	RTW89_BW20_SC_20M = 1,
+	RTW89_BW20_SC_40M = 2,
+	RTW89_BW20_SC_80M = 4,
+	RTW89_BW20_SC_160M = 8,
+	RTW89_BW20_SC_320M = 16,
+};
+
+enum rtw89_cmac_table_bw {
+	RTW89_CMAC_BW_20M = 0,
+	RTW89_CMAC_BW_40M = 1,
+	RTW89_CMAC_BW_80M = 2,
+	RTW89_CMAC_BW_160M = 3,
+	RTW89_CMAC_BW_320M = 4,
+
+	RTW89_CMAC_BW_NR,
+};
+
 enum rtw89_phy_bb_rxsc_num {
 	RTW89_BB_RXSC_NUM_40 = 9, /* SC: 0, 1~8 */
 	RTW89_BB_RXSC_NUM_80 = 13, /* SC: 0, 1~8, 9~12 */
@@ -4625,6 +4686,27 @@ struct rtw89_phy_bb_gain_info {
 		      [RTW89_BB_RXSC_NUM_80];
 	s8 rpl_ofst_160[RTW89_BB_GAIN_BAND_NR][RF_PATH_MAX]
 		       [RTW89_BB_RXSC_NUM_160];
+};
+
+struct rtw89_phy_bb_gain_info_be {
+	s8 lna_gain[RTW89_BB_GAIN_BAND_NR_BE][RTW89_BB_BW_NR_BE][RF_PATH_MAX]
+		   [LNA_GAIN_NUM];
+	s8 tia_gain[RTW89_BB_GAIN_BAND_NR_BE][RTW89_BB_BW_NR_BE][RF_PATH_MAX]
+		   [TIA_GAIN_NUM];
+	s8 lna_gain_bypass[RTW89_BB_GAIN_BAND_NR_BE][RTW89_BB_BW_NR_BE]
+			  [RF_PATH_MAX][LNA_GAIN_NUM];
+	s8 lna_op1db[RTW89_BB_GAIN_BAND_NR_BE][RTW89_BB_BW_NR_BE]
+		    [RF_PATH_MAX][LNA_GAIN_NUM];
+	s8 tia_lna_op1db[RTW89_BB_GAIN_BAND_NR_BE][RTW89_BB_BW_NR_BE]
+			[RF_PATH_MAX][LNA_GAIN_NUM + 1];
+	s8 rpl_ofst_20[RTW89_BB_GAIN_BAND_NR_BE][RF_PATH_MAX]
+		      [RTW89_BW20_SC_20M];
+	s8 rpl_ofst_40[RTW89_BB_GAIN_BAND_NR_BE][RF_PATH_MAX]
+		      [RTW89_BW20_SC_40M];
+	s8 rpl_ofst_80[RTW89_BB_GAIN_BAND_NR_BE][RF_PATH_MAX]
+		      [RTW89_BW20_SC_80M];
+	s8 rpl_ofst_160[RTW89_BB_GAIN_BAND_NR_BE][RF_PATH_MAX]
+		       [RTW89_BW20_SC_160M];
 };
 
 struct rtw89_phy_efuse_gain {
@@ -4824,7 +4906,10 @@ struct rtw89_dev {
 	struct rtw89_env_monitor_info env_monitor;
 	struct rtw89_dig_info dig;
 	struct rtw89_phy_ch_info ch_info;
-	struct rtw89_phy_bb_gain_info bb_gain;
+	union {
+		struct rtw89_phy_bb_gain_info ax;
+		struct rtw89_phy_bb_gain_info_be be;
+	} bb_gain;
 	struct rtw89_phy_efuse_gain efuse_gain;
 	struct rtw89_phy_ul_tb_info ul_tb_info;
 	struct rtw89_antdiv_info antdiv;

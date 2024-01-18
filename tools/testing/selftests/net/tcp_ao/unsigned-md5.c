@@ -30,7 +30,7 @@ static void setup_vrfs(void)
 	err = ip_route_add_vrf(veth_name, TEST_FAMILY,
 			       this_ip_addr, this_ip_dest, test_vrf_tabid);
 	if (err)
-		test_error("Failed to add a route to VRF");
+		test_error("Failed to add a route to VRF: %d", err);
 }
 
 static void try_accept(const char *tst_name, unsigned int port,
@@ -72,7 +72,7 @@ static void try_accept(const char *tst_name, unsigned int port,
 	err = test_wait_fd(lsk, timeout, 0);
 	if (err == -ETIMEDOUT) {
 		if (!fault(TIMEOUT))
-			test_fail("timeouted for accept()");
+			test_fail("timed out for accept()");
 	} else if (err < 0) {
 		test_error("test_wait_fd()");
 	} else {
@@ -494,15 +494,14 @@ out:
 
 static void client_add_ip(union tcp_addr *client, const char *ip)
 {
-	int family = TEST_FAMILY;
+	int err, family = TEST_FAMILY;
 
 	if (inet_pton(family, ip, client) != 1)
 		test_error("Can't convert ip address %s", ip);
 
-	if (ip_addr_add(veth_name, family, *client, TEST_PREFIX))
-		test_error("Failed to add ip address");
-	if (ip_route_add(veth_name, family, *client, this_ip_dest))
-		test_error("Failed to add route");
+	err = ip_addr_add(veth_name, family, *client, TEST_PREFIX);
+	if (err)
+		test_error("Failed to add ip address: %d", err);
 }
 
 static void client_add_ips(void)

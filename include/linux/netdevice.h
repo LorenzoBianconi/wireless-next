@@ -1329,6 +1329,9 @@ struct netdev_net_notifier {
  * int (*ndo_mdb_del)(struct net_device *dev, struct nlattr *tb[],
  *		      struct netlink_ext_ack *extack);
  *	Deletes the MDB entry from dev.
+ * int (*ndo_mdb_del_bulk)(struct net_device *dev, struct nlattr *tb[],
+ *			   struct netlink_ext_ack *extack);
+ *	Bulk deletes MDB entries from dev.
  * int (*ndo_mdb_dump)(struct net_device *dev, struct sk_buff *skb,
  *		       struct netlink_callback *cb);
  *	Dumps MDB entries from dev. The first argument (marker) in the netlink
@@ -1611,6 +1614,9 @@ struct net_device_ops {
 	int			(*ndo_mdb_del)(struct net_device *dev,
 					       struct nlattr *tb[],
 					       struct netlink_ext_ack *extack);
+	int			(*ndo_mdb_del_bulk)(struct net_device *dev,
+						    struct nlattr *tb[],
+						    struct netlink_ext_ack *extack);
 	int			(*ndo_mdb_dump)(struct net_device *dev,
 						struct sk_buff *skb,
 						struct netlink_callback *cb);
@@ -2108,6 +2114,7 @@ struct net_device {
 	const struct net_device_ops *netdev_ops;
 	const struct header_ops *header_ops;
 	struct netdev_queue	*_tx;
+	netdev_features_t	gso_partial_features;
 	unsigned int		real_num_tx_queues;
 	unsigned int		gso_max_size;
 	unsigned int		gso_ipv4_max_size;
@@ -2142,6 +2149,7 @@ struct net_device {
 
 	/* RX read-mostly hotpath */
 	__cacheline_group_begin(net_device_read_rx);
+	struct bpf_prog __rcu	*xdp_prog;
 	struct list_head	ptype_specific;
 	int			ifindex;
 	unsigned int		real_num_rx_queues;
@@ -2204,7 +2212,6 @@ struct net_device {
 	netdev_features_t	vlan_features;
 	netdev_features_t	hw_enc_features;
 	netdev_features_t	mpls_features;
-	netdev_features_t	gso_partial_features;
 
 	unsigned int		min_mtu;
 	unsigned int		max_mtu;
@@ -2318,7 +2325,6 @@ struct net_device {
 	const unsigned char	*dev_addr;
 
 	unsigned int		num_rx_queues;
-	struct bpf_prog __rcu	*xdp_prog;
 #define GRO_LEGACY_MAX_SIZE	65536u
 /* TCP minimal MSS is 8 (TCP_MIN_GSO_SIZE),
  * and shinfo->gso_segs is a 16bit field.

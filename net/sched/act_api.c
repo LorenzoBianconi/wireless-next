@@ -1119,7 +1119,8 @@ repeat:
 			}
 		} else if (TC_ACT_EXT_CMP(ret, TC_ACT_GOTO_CHAIN)) {
 			if (unlikely(!rcu_access_pointer(a->goto_chain))) {
-				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
+				tcf_set_drop_reason(skb,
+						    SKB_DROP_REASON_TC_CHAIN_NOTFOUND);
 				return TC_ACT_SHOT;
 			}
 			tcf_action_goto_chain_exec(a, res);
@@ -1312,7 +1313,7 @@ void tcf_idr_insert_many(struct tc_action *actions[], int init_res[])
 	tcf_act_for_each_action(i, a, actions) {
 		struct tcf_idrinfo *idrinfo;
 
-		if (init_res[i] == 0) /* Bound */
+		if (init_res[i] == ACT_P_BOUND)
 			continue;
 
 		idrinfo = a->idrinfo;
@@ -1323,10 +1324,10 @@ void tcf_idr_insert_many(struct tc_action *actions[], int init_res[])
 	}
 }
 
-struct tc_action_ops *tc_action_load_ops(struct nlattr *nla, bool police,
-					 bool rtnl_held,
+struct tc_action_ops *tc_action_load_ops(struct nlattr *nla, u32 flags,
 					 struct netlink_ext_ack *extack)
 {
+	bool police = flags & TCA_ACT_FLAGS_POLICE;
 	struct nlattr *tb[TCA_ACT_MAX + 1];
 	struct tc_action_ops *a_o;
 	char act_name[IFNAMSIZ];
@@ -1358,6 +1359,8 @@ struct tc_action_ops *tc_action_load_ops(struct nlattr *nla, bool police,
 	a_o = tc_lookup_action_n(act_name);
 	if (a_o == NULL) {
 #ifdef CONFIG_MODULES
+		bool rtnl_held = !(flags & TCA_ACT_FLAGS_NO_RTNL);
+
 		if (rtnl_held)
 			rtnl_unlock();
 		request_module("act_%s", act_name);
@@ -1474,9 +1477,7 @@ int tcf_action_init(struct net *net, struct tcf_proto *tp, struct nlattr *nla,
 	for (i = 1; i <= TCA_ACT_MAX_PRIO && tb[i]; i++) {
 		struct tc_action_ops *a_o;
 
-		a_o = tc_action_load_ops(tb[i], flags & TCA_ACT_FLAGS_POLICE,
-					 !(flags & TCA_ACT_FLAGS_NO_RTNL),
-					 extack);
+		a_o = tc_action_load_ops(tb[i], flags, extack);
 		if (IS_ERR(a_o)) {
 			err = PTR_ERR(a_o);
 			goto err_mod;
