@@ -884,7 +884,7 @@ static void bnxt_get_channels(struct net_device *dev,
 	if (max_tx_sch_inputs)
 		max_tx_rings = min_t(int, max_tx_rings, max_tx_sch_inputs);
 
-	tcs = netdev_get_num_tc(dev);
+	tcs = bp->num_tc;
 	tx_grps = max(tcs, 1);
 	if (bp->tx_nr_rings_xdp)
 		tx_grps++;
@@ -944,7 +944,7 @@ static int bnxt_set_channels(struct net_device *dev,
 	if (channel->combined_count)
 		sh = true;
 
-	tcs = netdev_get_num_tc(dev);
+	tcs = bp->num_tc;
 
 	req_tx_rings = sh ? channel->combined_count : channel->tx_count;
 	req_rx_rings = sh ? channel->combined_count : channel->rx_count;
@@ -1345,25 +1345,26 @@ static int bnxt_srxclsrldel(struct bnxt *bp, struct ethtool_rxnfc *cmd)
 {
 	struct ethtool_rx_flow_spec *fs = &cmd->fs;
 	struct bnxt_filter_base *fltr_base;
+	struct bnxt_ntuple_filter *fltr;
 
 	rcu_read_lock();
 	fltr_base = bnxt_get_one_fltr_rcu(bp, bp->ntp_fltr_hash_tbl,
 					  BNXT_NTP_FLTR_HASH_SIZE,
 					  fs->location);
-	if (fltr_base) {
-		struct bnxt_ntuple_filter *fltr;
-
-		fltr = container_of(fltr_base, struct bnxt_ntuple_filter, base);
+	if (!fltr_base) {
 		rcu_read_unlock();
-		if (!(fltr->base.flags & BNXT_ACT_NO_AGING))
-			return -EINVAL;
-		bnxt_hwrm_cfa_ntuple_filter_free(bp, fltr);
-		bnxt_del_ntp_filter(bp, fltr);
-		return 0;
+		return -ENOENT;
 	}
 
+	fltr = container_of(fltr_base, struct bnxt_ntuple_filter, base);
+	if (!(fltr->base.flags & BNXT_ACT_NO_AGING)) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
 	rcu_read_unlock();
-	return -ENOENT;
+	bnxt_hwrm_cfa_ntuple_filter_free(bp, fltr);
+	bnxt_del_ntp_filter(bp, fltr);
+	return 0;
 }
 
 static u64 get_ethtool_ipv4_rss(struct bnxt *bp)
@@ -1573,7 +1574,8 @@ u32 bnxt_get_rxfh_indir_size(struct net_device *dev)
 	struct bnxt *bp = netdev_priv(dev);
 
 	if (bp->flags & BNXT_FLAG_CHIP_P5_PLUS)
-		return ALIGN(bp->rx_nr_rings, BNXT_RSS_TABLE_ENTRIES_P5);
+		return bnxt_get_nr_rss_ctxs(bp, bp->rx_nr_rings) *
+		       BNXT_RSS_TABLE_ENTRIES_P5;
 	return HW_HASH_INDEX_SIZE;
 }
 
