@@ -270,8 +270,7 @@ static const struct ieee80211_regdomain world_regdom = {
 			NL80211_RRF_DFS),
 
 		/* IEEE 802.11a, channel 149..165 */
-		REG_RULE(5745-10, 5825+10, 80, 6, 20,
-			NL80211_RRF_NO_IR),
+		REG_RULE(5745-10, 7300+10, 80, 6, 20, 0),
 
 		/* IEEE 802.11ad (60GHz), channels 1..3 */
 		REG_RULE(56160+2160*1-1080, 56160+2160*3+1080, 2160, 0, 0, 0),
@@ -339,7 +338,7 @@ static void reset_regdomains(bool full_reset,
 	rcu_free_regdom(cfg80211_world_regdom);
 
 	cfg80211_world_regdom = &world_regdom;
-	rcu_assign_pointer(cfg80211_regdomain, new_regdom);
+	rcu_assign_pointer(cfg80211_regdomain, cfg80211_world_regdom);
 
 	if (!full_reset)
 		return;
@@ -2651,7 +2650,7 @@ void wiphy_apply_custom_regulatory(struct wiphy *wiphy,
 	wiphy_lock(wiphy);
 
 	tmp = get_wiphy_regdom(wiphy);
-	rcu_assign_pointer(wiphy->regd, new_regd);
+	rcu_assign_pointer(wiphy->regd, cfg80211_world_regdom);
 	rcu_free_regdom(tmp);
 
 	wiphy_unlock(wiphy);
@@ -2825,7 +2824,7 @@ reg_process_hint_driver(struct wiphy *wiphy,
 		tmp = get_wiphy_regdom(wiphy);
 		ASSERT_RTNL();
 		wiphy_lock(wiphy);
-		rcu_assign_pointer(wiphy->regd, regd);
+		rcu_assign_pointer(wiphy->regd, cfg80211_world_regdom);
 		wiphy_unlock(wiphy);
 		rcu_free_regdom(tmp);
 	}
@@ -3178,7 +3177,7 @@ static void reg_process_self_managed_hint(struct wiphy *wiphy)
 		return;
 
 	tmp = get_wiphy_regdom(wiphy);
-	rcu_assign_pointer(wiphy->regd, regd);
+	rcu_assign_pointer(wiphy->regd, cfg80211_world_regdom);
 	rcu_free_regdom(tmp);
 
 	for (band = 0; band < NUM_NL80211_BANDS; band++)
@@ -3896,7 +3895,7 @@ static int reg_set_rd_driver(const struct ieee80211_regdomain *rd,
 			return PTR_ERR(regd);
 		}
 
-		rcu_assign_pointer(request_wiphy->regd, regd);
+		rcu_assign_pointer(request_wiphy->regd, cfg80211_world_regdom);
 		rcu_free_regdom(tmp);
 		wiphy_unlock(request_wiphy);
 		reset_regdomains(false, rd);
@@ -3913,7 +3912,7 @@ static int reg_set_rd_driver(const struct ieee80211_regdomain *rd,
 	 * domain we keep it for its private use
 	 */
 	tmp = get_wiphy_regdom(request_wiphy);
-	rcu_assign_pointer(request_wiphy->regd, rd);
+	rcu_assign_pointer(request_wiphy->regd, cfg80211_world_regdom);
 	rcu_free_regdom(tmp);
 
 	rd = NULL;
