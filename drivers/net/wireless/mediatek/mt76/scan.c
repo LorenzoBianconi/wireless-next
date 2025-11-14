@@ -27,7 +27,7 @@ static void mt76_scan_complete(struct mt76_dev *dev, bool abort)
 
 void mt76_abort_scan(struct mt76_dev *dev)
 {
-	cancel_delayed_work_sync(&dev->scan_work);
+	cancel_delayed_work(&dev->scan_work);
 	mt76_scan_complete(dev, true);
 }
 EXPORT_SYMBOL_GPL(mt76_abort_scan);
@@ -86,12 +86,15 @@ void mt76_scan_work(struct work_struct *work)
 	struct cfg80211_scan_request *req = dev->scan.req;
 	struct cfg80211_chan_def chandef = {};
 	struct mt76_phy *phy = dev->scan.phy;
+	struct ieee80211_hw *hw = phy->hw;
 	int duration = HZ / 9; /* ~110 ms */
 	int i;
 
+	wiphy_lock(hw->wiphy);
+
 	if (dev->scan.chan_idx >= req->n_channels) {
 		mt76_scan_complete(dev, false);
-		return;
+		goto unlock;
 	}
 
 	if (dev->scan.chan && phy->num_sta) {
@@ -121,6 +124,8 @@ out:
 						  (req->duration >> 5)));
 
 	ieee80211_queue_delayed_work(dev->phy.hw, &dev->scan_work, duration);
+unlock:
+	wiphy_unlock(hw->wiphy);
 }
 
 int mt76_hw_scan(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
