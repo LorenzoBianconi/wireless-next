@@ -2317,11 +2317,49 @@ mt7996_change_vif_links(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			u16 old_links, u16 new_links,
 			struct ieee80211_bss_conf *old[IEEE80211_MLD_MAX_NUM_LINKS])
 {
-	struct mt7996_dev *dev = mt7996_hw_dev(hw);
 	struct mt7996_vif *mvif = (struct mt7996_vif *)vif->drv_priv;
+	unsigned long links_to_add = new_links & ~old_links;
+	unsigned long links_to_rem = old_links & ~new_links;
+	struct mt7996_dev *dev = mt7996_hw_dev(hw);
+	struct mt7996_vif_link *link;
+	unsigned int link_id;
 	int ret = 0;
 
 	mutex_lock(&dev->mt76.mutex);
+
+	if (links_to_rem && vif->type == NL80211_IFTYPE_AP) {
+		ret = mt7996_mcu_mld_reconf_stop_link(dev, vif, links_to_rem);
+		if (ret)
+			goto out;
+
+		for_each_set_bit(link_id, &links_to_rem,
+				 IEEE80211_MLD_MAX_NUM_LINKS) {
+			link = mt7996_vif_link(dev, vif, link_id);
+			if (!link)
+				continue;
+
+			ret = mt7996_mcu_mld_link_oper(dev, old[link_id], link,
+						       false);
+			if (ret)
+				goto out;
+		}
+	}
+
+	for_each_set_bit(link_id, &links_to_add, IEEE80211_MLD_MAX_NUM_LINKS) {
+		struct ieee80211_bss_conf *link_conf;
+
+		link_conf = link_conf_dereference_protected(vif, link_id);
+		if (!link_conf)
+			continue;
+
+		link = mt7996_vif_link(dev, vif, link_id);
+		if (!link)
+			continue;
+
+		ret = mt7996_mcu_mld_link_oper(dev, link_conf, link, true);
+		if (ret)
+			goto out;
+	}
 
 	if (!old_links) {
 		int idx;
