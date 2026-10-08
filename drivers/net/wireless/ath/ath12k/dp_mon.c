@@ -5,6 +5,7 @@
  */
 
 #include "dp_mon.h"
+#include "dp_rx.h"
 #include "debug.h"
 #include "dp_tx.h"
 #include "peer.h"
@@ -68,6 +69,7 @@ struct sk_buff
 	if (*buf_id < 0)
 		goto fail_dma_unmap;
 
+	ATH12K_SKB_RXCB(skb)->reinjected = false;
 	ATH12K_SKB_RXCB(skb)->paddr = paddr;
 	return skb;
 
@@ -561,9 +563,7 @@ ath12k_dp_mon_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 		return 0;
 	}
 
-	dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(msdu)->paddr,
-			 msdu->len + skb_tailroom(msdu),
-			 DMA_FROM_DEVICE);
+	ath12k_dp_unmap_rx_buf(dp, msdu);
 
 	offset = packet_info->dma_length + ATH12K_MON_RX_DOT11_OFFSET;
 	if (ath12k_dp_pkt_set_pktlen(msdu, offset)) {
@@ -630,6 +630,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_base *ab,
 		if (unlikely(!mon_buf))
 			goto fail_idr_remove;
 
+		ATH12K_SKB_RXCB(skb)->reinjected = false;
 		ATH12K_SKB_RXCB(skb)->paddr = paddr;
 
 		cookie = u32_encode_bits(buf_id, DP_RXDMA_BUF_COOKIE_BUF_ID);
@@ -719,6 +720,7 @@ int ath12k_dp_mon_status_bufs_replenish(struct ath12k_base *ab,
 		if (!desc)
 			goto fail_buf_unassign;
 
+		ATH12K_SKB_RXCB(skb)->reinjected = false;
 		ATH12K_SKB_RXCB(skb)->paddr = paddr;
 
 		num_remain--;
