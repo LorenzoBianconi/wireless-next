@@ -5,6 +5,7 @@
  */
 
 #include "core.h"
+#include "dp_rx.h"
 #include "dp_tx.h"
 #include "hif.h"
 #include "hal.h"
@@ -1003,10 +1004,7 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 					continue;
 
 				if (!ATH12K_SKB_RXCB(skb)->unmapped)
-					dma_unmap_single(ab->dev,
-							 ATH12K_SKB_RXCB(skb)->paddr,
-							 skb->len + skb_tailroom(skb),
-							 DMA_FROM_DEVICE);
+					ath12k_dp_unmap_rx_buf(dp, skb);
 				dev_kfree_skb_any(skb);
 			}
 
