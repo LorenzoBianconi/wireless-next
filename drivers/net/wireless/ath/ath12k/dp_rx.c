@@ -73,21 +73,31 @@ static struct sk_buff *ath12k_dp_rx_build_skb(struct ath12k_dp *dp,
 {
 	struct sk_buff *skb;
 	struct page *page;
+	int offset;
+	void *buf;
 
 	if (!rx_ring->page_pool)
 		return NULL;
 
-	page = page_pool_dev_alloc_pages(rx_ring->page_pool);
+	page = page_pool_alloc_frag(rx_ring->page_pool, &offset,
+				    DP_RX_BUFFER_TOTAL_SIZE,
+				    GFP_ATOMIC | __GFP_NOWARN);
 	if (!page)
 		return NULL;
 
-	skb = build_skb(page_address(page), PAGE_SIZE);
+	buf = page_address(page) + offset;
+	if (!IS_ALIGNED((unsigned long)buf, DP_RX_BUFFER_ALIGN_SIZE)) {
+		offset += PTR_ALIGN(buf, DP_RX_BUFFER_ALIGN_SIZE) - buf;
+		buf = page_address(page) + offset;
+	}
+
+	skb = build_skb(buf, DP_RX_BUFFER_TOTAL_SIZE);
 	if (!skb) {
 		page_pool_put_full_page(rx_ring->page_pool, page, false);
 		return NULL;
 	}
 
-	ATH12K_SKB_RXCB(skb)->paddr = page_pool_get_dma_addr(page);
+	ATH12K_SKB_RXCB(skb)->paddr = page_pool_get_dma_addr(page) + offset;
 	skb_mark_for_recycle(skb);
 
 	return skb;
