@@ -426,114 +426,28 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 
-static int ath12k_wifi7_dp_rx_msdu_coalesce(struct ath12k_hal *hal,
-					    struct sk_buff_head *msdu_list,
-					    struct sk_buff *first, struct sk_buff *last,
-					    u8 l3pad_bytes, int msdu_len,
-					    struct hal_rx_desc_data *rx_info)
-{
-	struct sk_buff *skb;
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(first);
-	int buf_first_hdr_len, buf_first_len;
-	struct hal_rx_desc *ldesc;
-	int space_extra, rem_len, buf_len;
-	u32 hal_rx_desc_sz = hal->hal_desc_sz;
-	bool is_continuation;
-
-	/* As the msdu is spread across multiple rx buffers,
-	 * find the offset to the start of msdu for computing
-	 * the length of the msdu in the first buffer.
-	 */
-	buf_first_hdr_len = hal_rx_desc_sz + l3pad_bytes;
-	buf_first_len = DP_RX_BUFFER_SIZE - buf_first_hdr_len;
-
-	if (WARN_ON_ONCE(msdu_len <= buf_first_len)) {
-		skb_put(first, buf_first_hdr_len + msdu_len);
-		skb_pull(first, buf_first_hdr_len);
-		return 0;
-	}
-
-	ldesc = (struct hal_rx_desc *)last->data;
-	rxcb->is_first_msdu = rx_info->is_first_msdu;
-	rxcb->is_last_msdu = rx_info->is_last_msdu;
-
-	/* MSDU spans over multiple buffers because the length of the MSDU
-	 * exceeds DP_RX_BUFFER_SIZE - HAL_RX_DESC_SIZE. So assume the data
-	 * in the first buf is of length DP_RX_BUFFER_SIZE - HAL_RX_DESC_SIZE.
-	 */
-	skb_put(first, DP_RX_BUFFER_SIZE);
-	skb_pull(first, buf_first_hdr_len);
-
-	/* When an MSDU spread over multiple buffers MSDU_END
-	 * tlvs are valid only in the last buffer. Copy those tlvs.
-	 */
-	ath12k_dp_rx_desc_end_tlv_copy(hal, rxcb->rx_desc, ldesc);
-
-	space_extra = msdu_len - (buf_first_len + skb_tailroom(first));
-	if (space_extra > 0 &&
-	    (pskb_expand_head(first, 0, space_extra, GFP_ATOMIC) < 0)) {
-		/* Free up all buffers of the MSDU */
-		while ((skb = __skb_dequeue(msdu_list)) != NULL) {
-			rxcb = ATH12K_SKB_RXCB(skb);
-			if (!rxcb->is_continuation) {
-				dev_kfree_skb_any(skb);
-				break;
-			}
-			dev_kfree_skb_any(skb);
-		}
-		return -ENOMEM;
-	}
-
-	rem_len = msdu_len - buf_first_len;
-	while ((skb = __skb_dequeue(msdu_list)) != NULL && rem_len > 0) {
-		rxcb = ATH12K_SKB_RXCB(skb);
-		is_continuation = rxcb->is_continuation;
-		if (is_continuation)
-			buf_len = DP_RX_BUFFER_SIZE - hal_rx_desc_sz;
-		else
-			buf_len = rem_len;
-
-		if (buf_len > (DP_RX_BUFFER_SIZE - hal_rx_desc_sz)) {
-			WARN_ON_ONCE(1);
-			dev_kfree_skb_any(skb);
-			return -EINVAL;
-		}
-
-		skb_put(skb, buf_len + hal_rx_desc_sz);
-		skb_pull(skb, hal_rx_desc_sz);
-		skb_copy_from_linear_data(skb, skb_put(first, buf_len),
-					  buf_len);
-		dev_kfree_skb_any(skb);
-
-		rem_len -= buf_len;
-		if (!is_continuation)
-			break;
-	}
-
-	return 0;
-}
-
 static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 					   struct sk_buff *msdu,
 					   struct sk_buff_head *msdu_list,
-					   struct hal_rx_desc_data *rx_info)
+					   struct hal_rx_desc_data *rx_info,
+					   struct list_head *list)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ieee80211_rx_status *rx_status = IEEE80211_SKB_RXCB(msdu);
+	struct ieee80211_rx_status *status = rx_info->rx_status;
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	struct sk_buff *last_buf, *frag_list = NULL;
+	struct ieee80211_link_sta *link_sta = NULL;
 	struct hal_rx_desc *rx_desc, *lrx_desc;
-	struct ath12k_skb_rxcb *rxcb;
-	struct sk_buff *last_buf;
+	int ret, msdu_len, rx_desc_headroom;
+	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
-	u8 l3_pad_bytes;
-	u16 msdu_len;
-	int ret;
-	u32 hal_rx_desc_sz = hal->hal_desc_sz;
+	struct ath12k_dp_peer *peer;
 
 	last_buf = ath12k_dp_rx_get_msdu_last_buf(msdu_list, msdu);
 	if (!last_buf) {
 		ath12k_warn(dp->ab,
 			    "No valid Rx buffer to access MSDU_END tlv\n");
-		ret = -EIO;
-		goto free_out;
+		return -EIO;
 	}
 
 	rx_desc = (struct hal_rx_desc *)msdu->data;
@@ -542,56 +456,133 @@ static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_extract_rx_desc_data(hal, rx_info, rx_desc, lrx_desc);
 	if (!rx_info->msdu_done) {
 		ath12k_warn(dp->ab, "msdu_done bit in msdu_end is not set\n");
-		ret = -EIO;
-		goto free_out;
+		return -EIO;
 	}
 
-	rxcb = ATH12K_SKB_RXCB(msdu);
 	rxcb->rx_desc = rx_desc;
+	rxcb->is_first_msdu = rx_info->is_first_msdu;
+	rxcb->is_last_msdu = rx_info->is_last_msdu;
 	msdu_len = rx_info->msdu_len;
-	l3_pad_bytes = rx_info->l3_pad_bytes;
+	rx_desc_headroom = hal->hal_desc_sz + rx_info->l3_pad_bytes;
+	/* When an MSDU spread over multiple buffers MSDU_END
+	 * tlvs are valid only in the last buffer. Copy those tlvs.
+	 */
+	ath12k_dp_rx_desc_end_tlv_copy(hal, rxcb->rx_desc, lrx_desc);
 
 	if (rxcb->is_frag) {
-		skb_pull(msdu, hal_rx_desc_sz);
-	} else if (!rxcb->is_continuation) {
-		if ((msdu_len + hal_rx_desc_sz) > DP_RX_BUFFER_SIZE) {
-			ret = -EINVAL;
-			ath12k_warn(dp->ab, "invalid msdu len %u\n", msdu_len);
-			ath12k_dbg_dump(dp->ab, ATH12K_DBG_DATA, NULL, "", rx_desc,
-					sizeof(*rx_desc));
-			goto free_out;
-		}
-		skb_put(msdu, hal_rx_desc_sz + l3_pad_bytes + msdu_len);
-		skb_pull(msdu, hal_rx_desc_sz + l3_pad_bytes);
+		skb_pull(msdu, hal->hal_desc_sz);
 	} else {
-		ret = ath12k_wifi7_dp_rx_msdu_coalesce(hal, msdu_list,
-						       msdu, last_buf,
-						       l3_pad_bytes, msdu_len,
-						       rx_info);
-		if (ret) {
-			ath12k_warn(dp->ab,
-				    "failed to coalesce msdu rx buffer%d\n", ret);
-			goto free_out;
+		if (!rxcb->is_continuation &&
+		    msdu_len + hal->hal_desc_sz > DP_RX_BUFFER_SIZE) {
+			ath12k_warn(dp->ab, "invalid msdu len %u\n", msdu_len);
+			ath12k_dbg_dump(dp->ab, ATH12K_DBG_DATA, NULL, "",
+					rx_desc, sizeof(*rx_desc));
+			return -EINVAL;
+		}
+
+		if (!rxcb->is_continuation ||
+		    msdu_len <= DP_RX_BUFFER_SIZE - rx_desc_headroom)
+			skb_put(msdu, rx_desc_headroom + msdu_len);
+		else
+			skb_put(msdu, DP_RX_BUFFER_SIZE);
+		skb_pull(msdu, rx_desc_headroom);
+	}
+
+	if (!rxcb->is_frag && rxcb->is_continuation) {
+		unsigned int frag_len = 0, truesize = 0;
+		struct sk_buff *skb, *last_frag;
+
+		/* The MSDU is spread across multiple rx buffers */
+		msdu_len -= (DP_RX_BUFFER_SIZE - rx_desc_headroom);
+
+		while (msdu_len > 0) {
+			struct ath12k_skb_rxcb *cb;
+			int len;
+
+			skb = __skb_dequeue(msdu_list);
+			if (!skb) {
+				WARN_ON_ONCE(msdu_len > 0);
+				goto free_frag_list;
+			}
+
+			cb = ATH12K_SKB_RXCB(skb);
+			if (cb->is_continuation)
+				len = DP_RX_BUFFER_SIZE - hal->hal_desc_sz;
+			else
+				len = msdu_len;
+
+			if (len > DP_RX_BUFFER_SIZE - hal->hal_desc_sz) {
+				dev_kfree_skb_any(skb);
+				goto free_frag_list;
+			}
+
+			skb_put(skb, len + hal->hal_desc_sz);
+			skb_pull(skb, hal->hal_desc_sz);
+
+			if (!frag_list)
+				frag_list = skb;
+			else
+				last_frag->next = skb;
+
+			skb->next = NULL;
+			last_frag = skb;
+
+			msdu_len -= len;
+			frag_len += skb->len;
+			truesize += skb->truesize;
+			if (!cb->is_continuation)
+				break;
+		}
+
+		if (frag_list) {
+			skb_shinfo(msdu)->frag_list = frag_list;
+			msdu->data_len = frag_len;
+			msdu->len += frag_len;
+			msdu->truesize += truesize;
+			msdu->next = NULL;
 		}
 	}
 
-	if (unlikely(!ath12k_dp_rx_check_nwifi_hdr_len_valid(dp, msdu,
-							     rx_info))) {
-		ret = -EINVAL;
-		goto free_out;
-	}
+	if (!ath12k_dp_rx_check_nwifi_hdr_len_valid(dp, msdu, rx_info))
+		return -EINVAL;
 
 	ath12k_dp_rx_h_ppdu(dp_pdev, rx_info);
 	ret = ath12k_wifi7_dp_rx_h_mpdu(dp_pdev, msdu, rx_info);
 	if (ret)
-		goto free_out;
+		return ret;
 
-	rx_info->rx_status->flag |= RX_FLAG_SKIP_MONITOR | RX_FLAG_DUP_VALIDATED;
+	peer = ath12k_dp_peer_find_by_peerid(dp_pdev, rxcb->peer_id);
+	if (peer) {
+		struct ieee80211_sta *sta = peer->sta;
+
+		if (sta && sta->valid_links) {
+			int link_id;
+
+			link_id = ath12k_hw_get_rx_link_id(dp->hw_params,
+							   peer, rxcb, status);
+			if (link_id >= 0 && link_id < ARRAY_SIZE(sta->link))
+				link_sta = rcu_dereference(sta->link[link_id]);
+		} else if (sta) {
+			link_sta = &sta->deflink;
+		}
+	}
+
+	status->flag |= RX_FLAG_SKIP_MONITOR | RX_FLAG_DUP_VALIDATED;
+	*rx_status = *status;
+
+	ieee80211_rx_list(ath12k_pdev_dp_to_hw(dp_pdev), link_sta, msdu, list);
 
 	return 0;
 
-free_out:
-	return ret;
+free_frag_list:
+	while (frag_list) {
+		struct sk_buff *skb = frag_list;
+
+		frag_list = frag_list->next;
+		dev_kfree_skb_any(skb);
+	}
+
+	return -EINVAL;
 }
 
 static void
@@ -603,8 +594,8 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	struct ath12k_hw_group *ag = dp->ag;
 	struct ath12k_dp_hw_group *dp_hw_grp = &ag->dp_hw_grp;
 	struct ieee80211_rx_status rx_status = {};
+	struct sk_buff *msdu, *skb, *tmp;
 	struct ath12k_skb_rxcb *rxcb;
-	struct sk_buff *msdu;
 	struct ath12k *ar;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_hw_link *hw_links = ag->hw_links;
@@ -612,6 +603,7 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	struct hal_rx_desc_data rx_info;
 	struct ath12k_dp *partner_dp;
 	u8 hw_link_id, pdev_idx;
+	LIST_HEAD(list);
 	int ret;
 
 	if (skb_queue_empty(msdu_list))
@@ -647,7 +639,8 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
-		ret = ath12k_wifi7_dp_rx_process_msdu(dp_pdev, msdu, msdu_list, &rx_info);
+		ret = ath12k_wifi7_dp_rx_process_msdu(dp_pdev, msdu, msdu_list,
+						      &rx_info, &list);
 		if (ret) {
 			ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
 				   "Unable to process msdu %d", ret);
@@ -658,7 +651,11 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			dp->device_stats.sent_to_stack[ring_id][partner_dp->device_id]++;
 		else
 			WARN_ON_ONCE(1);
-		ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rx_info);
+	}
+
+	list_for_each_entry_safe(skb, tmp, &list, list) {
+		skb_list_del_init(skb);
+		napi_gro_receive(napi, skb);
 	}
 
 	rcu_read_unlock();
