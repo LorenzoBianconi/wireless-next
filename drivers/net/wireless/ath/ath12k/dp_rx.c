@@ -1010,6 +1010,7 @@ static int ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_hdr *hdr;
 	size_t hdr_len;
 	size_t crypto_len;
+	int err;
 
 	if (!rxcb->is_first_msdu ||
 	    !(rxcb->is_first_msdu && rxcb->is_last_msdu)) {
@@ -1020,7 +1021,9 @@ static int ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev,
 	if (msdu->len < FCS_LEN)
 		return -EINVAL;
 
-	skb_trim(msdu, msdu->len - FCS_LEN);
+	err = pskb_trim(msdu, msdu->len - FCS_LEN);
+	if (err)
+		return err;
 
 	if (!decrypted)
 		return 0;
@@ -1029,28 +1032,47 @@ static int ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev,
 
 	/* Tail */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
-		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_mic_len(dp, enctype));
+		err = pskb_trim(msdu,
+				msdu->len -
+				ath12k_dp_rx_crypto_mic_len(dp, enctype));
+		if (err)
+			return err;
 
-		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+		err = pskb_trim(msdu,
+				msdu->len -
+				ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+		if (err)
+			return err;
 	} else {
 		/* MIC */
-		if (status->flag & RX_FLAG_MIC_STRIPPED)
-			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_mic_len(dp, enctype));
+		if (status->flag & RX_FLAG_MIC_STRIPPED) {
+			err = pskb_trim(msdu,
+					msdu->len -
+					ath12k_dp_rx_crypto_mic_len(dp,
+								    enctype));
+			if (err)
+				return err;
+		}
 
 		/* ICV */
-		if (status->flag & RX_FLAG_ICV_STRIPPED)
-			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+		if (status->flag & RX_FLAG_ICV_STRIPPED) {
+			err = pskb_trim(msdu,
+					msdu->len -
+					ath12k_dp_rx_crypto_icv_len(dp_pdev,
+								    enctype));
+			if (err)
+				return err;
+		}
 	}
 
 	/* MMIC */
 	if ((status->flag & RX_FLAG_MMIC_STRIPPED) &&
 	    !ieee80211_has_morefrags(hdr->frame_control) &&
-	    enctype == HAL_ENCRYPT_TYPE_TKIP_MIC)
-		skb_trim(msdu, msdu->len - IEEE80211_CCMP_MIC_LEN);
+	    enctype == HAL_ENCRYPT_TYPE_TKIP_MIC) {
+		err = pskb_trim(msdu, msdu->len - MICHAEL_MIC_LEN);
+		if (err)
+			return err;
+	}
 
 	/* Head */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
