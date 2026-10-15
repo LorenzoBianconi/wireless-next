@@ -344,6 +344,7 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_peer *peer;
 	struct ieee80211_rx_status *rx_status = rx_info->rx_status;
 	u32 err_bitmap = rx_info->err_bitmap;
+	int err;
 
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "dp_rx_h_mpdu called without rcu lock");
@@ -409,8 +410,10 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_info);
-	ath12k_dp_rx_h_undecap(dp_pdev, msdu, enctype, is_decrypted, rx_info,
-			       peer);
+	err = ath12k_dp_rx_h_undecap(dp_pdev, msdu, enctype, is_decrypted,
+				     rx_info, peer);
+	if (err)
+		return err;
 
 	if (!is_decrypted || rx_info->is_mcbc)
 		return 0;
@@ -1064,9 +1067,12 @@ mic_fail:
 	}
 
 	ath12k_dp_rx_h_ppdu(dp_pdev, rx_info);
-	ath12k_dp_rx_h_undecap(dp_pdev, msdu, HAL_ENCRYPT_TYPE_TKIP_MIC, true,
-			       rx_info, NULL);
-	ieee80211_rx(ath12k_pdev_dp_to_hw(dp_pdev), msdu);
+	if (!ath12k_dp_rx_h_undecap(dp_pdev, msdu, HAL_ENCRYPT_TYPE_TKIP_MIC,
+				    true, rx_info, NULL))
+		ieee80211_rx(ath12k_pdev_dp_to_hw(dp_pdev), msdu);
+	else
+		dev_kfree_skb_any(msdu);
+
 	return -EINVAL;
 }
 
@@ -1715,8 +1721,10 @@ static bool ath12k_wifi7_dp_rx_h_tkip_mic_err(struct ath12k_pdev_dp *dp_pdev,
 	rx_info->rx_status->flag |= (RX_FLAG_MMIC_STRIPPED | RX_FLAG_MMIC_ERROR |
 				     RX_FLAG_DECRYPTED);
 
-	ath12k_dp_rx_h_undecap(dp_pdev, msdu, HAL_ENCRYPT_TYPE_TKIP_MIC, false,
-			       rx_info, NULL);
+	if (ath12k_dp_rx_h_undecap(dp_pdev, msdu, HAL_ENCRYPT_TYPE_TKIP_MIC,
+				   false, rx_info, NULL))
+		return true;
+
 	return false;
 }
 
