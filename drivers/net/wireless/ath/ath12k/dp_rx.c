@@ -999,11 +999,11 @@ static void ath12k_dp_rx_h_undecap_nwifi(struct ath12k_pdev_dp *dp_pdev,
 	memcpy(skb_push(msdu, hdr_len), decap_hdr, hdr_len);
 }
 
-static void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev,
-				       struct sk_buff *msdu,
-				       enum hal_encrypt_type enctype,
-				       struct ieee80211_rx_status *status,
-				       bool decrypted)
+static int ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev,
+				      struct sk_buff *msdu,
+				      enum hal_encrypt_type enctype,
+				      struct ieee80211_rx_status *status,
+				      bool decrypted)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
@@ -1014,13 +1014,16 @@ static void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev,
 	if (!rxcb->is_first_msdu ||
 	    !(rxcb->is_first_msdu && rxcb->is_last_msdu)) {
 		WARN_ON_ONCE(1);
-		return;
+		return 0;
 	}
+
+	if (msdu->len < FCS_LEN)
+		return -EINVAL;
 
 	skb_trim(msdu, msdu->len - FCS_LEN);
 
 	if (!decrypted)
-		return;
+		return 0;
 
 	hdr = (void *)msdu->data;
 
@@ -1054,9 +1057,14 @@ static void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev,
 		hdr_len = ieee80211_hdrlen(hdr->frame_control);
 		crypto_len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
 
+		if (msdu->len < hdr_len + crypto_len)
+			return -EINVAL;
+
 		memmove(msdu->data + crypto_len, msdu->data, hdr_len);
 		skb_pull(msdu, crypto_len);
 	}
+
+	return 0;
 }
 
 static void ath12k_get_dot11_hdr_from_rx_desc(struct ath12k_pdev_dp *dp_pdev,
@@ -1143,11 +1151,11 @@ static void ath12k_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 	ether_addr_copy(ieee80211_get_SA(hdr), sa);
 }
 
-void ath12k_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
-			    enum hal_encrypt_type enctype,
-			    bool decrypted,
-			    struct hal_rx_desc_data *rx_info,
-			    struct ath12k_dp_peer *peer)
+int ath12k_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
+			   enum hal_encrypt_type enctype,
+			   bool decrypted,
+			   struct hal_rx_desc_data *rx_info,
+			   struct ath12k_dp_peer *peer)
 {
 	enum ath12k_dp_rx_decap_type decap_type = rx_info->decap_type;
 	struct ethhdr *ehdr;
@@ -1156,10 +1164,16 @@ void ath12k_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu
 	case DP_RX_DECAP_TYPE_NATIVE_WIFI:
 		ath12k_dp_rx_h_undecap_nwifi(dp_pdev, msdu, enctype, rx_info);
 		break;
-	case DP_RX_DECAP_TYPE_RAW:
-		ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu, enctype, rx_info->rx_status,
-					   decrypted);
+	case DP_RX_DECAP_TYPE_RAW: {
+		int err;
+
+		err = ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu, enctype,
+						 rx_info->rx_status,
+						 decrypted);
+		if (err)
+			return err;
 		break;
+	}
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
 		ehdr = (struct ethhdr *)msdu->data;
 
@@ -1201,6 +1215,8 @@ void ath12k_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu
 		}
 		rx_info->rx_status->flag |= RX_FLAG_8023;
 	}
+
+	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_rx_h_undecap);
 
