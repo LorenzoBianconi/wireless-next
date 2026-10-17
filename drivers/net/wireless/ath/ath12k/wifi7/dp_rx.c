@@ -2052,7 +2052,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		rx_ring = &partner_dp->rx_refill_buf_ring;
 
-		ath12k_dp_rx_bufs_replenish(dp, rx_ring,
+		ath12k_dp_rx_bufs_replenish(partner_dp, rx_ring,
 					    &rx_desc_used_list[device_id],
 					    num_buffs_reaped[device_id]);
 	}
