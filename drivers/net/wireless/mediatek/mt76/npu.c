@@ -18,6 +18,8 @@ int mt76_npu_fill_rx_queue(struct mt76_dev *dev, struct mt76_queue *q)
 {
 	int nframes = 0;
 
+	spin_lock_bh(&q->lock);
+
 	while (q->queued < q->ndesc - 1) {
 		struct airoha_npu_rx_dma_desc *desc = (void *)q->desc;
 		struct mt76_queue_entry *e = &q->entry[q->head];
@@ -39,6 +41,11 @@ int mt76_npu_fill_rx_queue(struct mt76_dev *dev, struct mt76_queue *q)
 		q->queued++;
 		nframes++;
 	}
+
+	wmb();
+	Q_WRITE(q, dma_idx, q->tail);
+
+	spin_unlock_bh(&q->lock);
 
 	return nframes;
 }
@@ -70,9 +77,13 @@ static int mt76_npu_rx_process_entry(struct napi_struct *napi)
 	enum mt76_rxq_id qid = napi - dev->napi;
 	struct mt76_queue *q = &dev->q_rx[qid];
 	struct airoha_npu_rx_dma_desc *desc = (void *)q->desc;
-	int nframes = q->pending;
+	int nframes, ret = 0;
+	struct sk_buff *skb;
 	u32 info = 0;
 
+	spin_lock_bh(&q->lock);
+
+	nframes = q->pending;
 	do {
 		struct mt76_queue_entry *e = &q->entry[q->tail];
 		u32 ctrl = READ_ONCE(desc[q->tail].ctrl);
@@ -80,12 +91,14 @@ static int mt76_npu_rx_process_entry(struct napi_struct *napi)
 
 		if (!q->queued) {
 			q->pending = nframes;
-			return -EBUSY;
+			ret = -EBUSY;
+			goto error_unlock;
 		}
 
 		if (!FIELD_GET(NPU_RX_DMA_DESC_DONE_MASK, ctrl)) {
 			q->pending = nframes;
-			return -EBUSY;
+			ret = -EBUSY;
+			goto error_unlock;
 		}
 
 		dma_rmb();
@@ -102,8 +115,10 @@ static int mt76_npu_rx_process_entry(struct napi_struct *napi)
 
 		if (!q->rx_head) {
 			q->rx_head = napi_build_skb(e->buf, q->buf_size);
-			if (!q->rx_head)
-				return -ENOMEM;
+			if (!q->rx_head) {
+				ret = -ENOMEM;
+				goto error_unlock;
+			}
 
 			__skb_put(q->rx_head, len);
 			skb_reset_mac_header(q->rx_head);
@@ -123,14 +138,20 @@ static int mt76_npu_rx_process_entry(struct napi_struct *napi)
 		q->queued--;
 	} while (--nframes > 0);
 
-	dev->drv->rx_skb(dev, qid, q->rx_head, &info);
-	mt76_rx_poll_complete(dev, qid, napi);
+	skb = q->rx_head;
 	q->rx_head = NULL;
 	q->pending = 0;
 
-	Q_WRITE(q, dma_idx, q->tail);
+	spin_unlock_bh(&q->lock);
+
+	dev->drv->rx_skb(dev, qid, skb, &info);
+	mt76_rx_poll_complete(dev, qid, napi);
 
 	return 0;
+
+error_unlock:
+	spin_unlock_bh(&q->lock);
+	return ret;
 }
 
 void mt76_npu_check_ppe(struct mt76_dev *dev, struct sk_buff *skb,
