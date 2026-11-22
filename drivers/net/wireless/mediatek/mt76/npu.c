@@ -554,8 +554,10 @@ void mt76_npu_deinit(struct mt76_dev *dev)
 	if (ppe_dev)
 		airoha_ppe_put_dev(ppe_dev);
 
-	mutex_unlock(&dev->mutex);
+	if (dev->q_rx[MT_RXQ_NPU0].ndesc)
+		mt76_npu_queue_cleanup(dev, &dev->q_rx[MT_RXQ_NPU0]);
+	if (dev->q_rx[MT_RXQ_NPU1].ndesc)
+		mt76_npu_queue_cleanup(dev, &dev->q_rx[MT_RXQ_NPU1]);
 
-	mt76_npu_queue_cleanup(dev, &dev->q_rx[MT_RXQ_NPU0]);
-	mt76_npu_queue_cleanup(dev, &dev->q_rx[MT_RXQ_NPU1]);
+	mutex_unlock(&dev->mutex);
 }
