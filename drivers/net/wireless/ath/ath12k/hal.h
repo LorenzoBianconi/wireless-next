@@ -1125,6 +1125,23 @@ struct hal_reo_status_header {
 	u32 timestamp;
 };
 
+struct hal_flow_tuple {
+	union {
+		struct in_addr src_v4;
+		struct in6_addr src_v6;
+	};
+
+	union {
+		struct in_addr dst_v4;
+		struct in6_addr dst_v6;
+	};
+
+	__be16 src_port;
+	__be16 dst_port;
+
+	u8 l4_proto;
+};
+
 struct ath12k_hw_hal_params {
 	enum hal_rx_buf_return_buf_manager rx_buf_rbm;
 	u32 wbm2sw_cc_enable;

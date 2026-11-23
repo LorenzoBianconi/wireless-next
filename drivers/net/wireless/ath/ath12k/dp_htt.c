@@ -1419,3 +1419,156 @@ err_free:
 	dev_kfree_skb_any(skb);
 	return ret;
 }
+
+int ath12k_dp_htt_rx_fst_flow_setup(struct ath12k_base *ab,
+				    struct htt_rx_flow_fst_setup *info)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct htt_rx_msg_flow_fst_setup *cmd;
+	u32 *key = (u32 *)info->hash_key;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_htc_alloc_skb(ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, sizeof(*cmd));
+	cmd = (struct htt_rx_msg_flow_fst_setup *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_RX_FSE_SETUP_CFG,
+				      HTT_DP_RX_FLOW_FST_SETUP_MSG_TYPE);
+
+	cmd->info1 = le32_encode_bits(info->max_entries,
+				      HTT_DP_RX_FLOW_FST_SETUP_NUM_RECORDS) |
+		     le32_encode_bits(info->max_search,
+				       HTT_DP_RX_FLOW_FST_SETUP_MAX_SEARCH) |
+		     le32_encode_bits(info->ip_prefix,
+				      HTT_DP_RX_FLOW_FST_SETUP_IP_DA_SA);
+
+	cmd->base_addr_lo = info->base_addr_lo;
+	cmd->base_addr_hi = info->base_addr_hi;
+
+	cmd->toeplitz[0] = *key++;
+	cmd->toeplitz[1] = *key++;
+	cmd->toeplitz[2] = *key++;
+	cmd->toeplitz[3] = *key++;
+	cmd->toeplitz[4] = *key++;
+	cmd->toeplitz[5] = *key++;
+	cmd->toeplitz[6] = *key++;
+	cmd->toeplitz[7] = *key++;
+	cmd->toeplitz[8] = *key++;
+	cmd->info2 = le32_encode_bits(*key, HTT_DP_RX_FLOW_FST_SETUP_TOEPLITZ);
+
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	if (ret)
+		dev_kfree_skb_any(skb);
+
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "dp fse setup: %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_htt_rx_fst_flow_setup);
+
+int ath12k_dp_htt_rx_fse_flow_op(struct ath12k_base *ab,
+				 enum dp_flow_fst_op op_code,
+				 struct hal_flow_tuple *tuple)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct htt_rx_msg_fse_op *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_htc_alloc_skb(ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, sizeof(*cmd));
+	cmd = (struct htt_rx_msg_fse_op *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_RX_FSE_OPERATION_CFG,
+				      HTT_H2T_MSG_RX_FSE_MSG_TYPE);
+
+	switch (op_code) {
+	case DP_FST_CACHE_INVALIDATE_ENTRY:
+		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_CACHE_INVALIDATE_ENTRY,
+					       HTT_H2T_MSG_RX_FSE_OPERATION);
+
+		/* XXX */
+		cmd->ip_src[0] = cpu_to_le32(tuple->src_v6.s6_addr32[0]);
+		cmd->ip_src[1] = cpu_to_le32(tuple->src_v6.s6_addr32[1]);
+		cmd->ip_src[2] = cpu_to_le32(tuple->src_v6.s6_addr32[2]);
+		cmd->ip_src[3] = cpu_to_le32(tuple->src_v6.s6_addr32[3]);
+		cmd->ip_dst[0] = cpu_to_le32(tuple->dst_v6.s6_addr32[0]);
+		cmd->ip_dst[1] = cpu_to_le32(tuple->dst_v6.s6_addr32[1]);
+		cmd->ip_dst[2] = cpu_to_le32(tuple->dst_v6.s6_addr32[2]);
+		cmd->ip_dst[3] = cpu_to_le32(tuple->dst_v6.s6_addr32[3]);
+
+		cmd->info2 = le32_encode_bits(tuple->src_port,
+					      HTT_H2T_MSG_RX_FSE_SRC_PORT) |
+			     le32_encode_bits(tuple->dst_port,
+					      HTT_H2T_MSG_RX_FSE_DEST_PORT);
+
+		cmd->info3 = le32_encode_bits(tuple->l4_proto,
+					      HTT_H2T_MSG_RX_FSE_L4_PROTO);
+		break;
+	case DP_FST_CACHE_INVALIDATE_FULL:
+		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_CACHE_INVALIDATE_FULL,
+					       HTT_H2T_MSG_RX_FSE_OPERATION);
+		break;
+	case DP_FST_DISABLE:
+		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_DISABLE,
+					       HTT_H2T_MSG_RX_FSE_OPERATION);
+		break;
+	case DP_FST_ENABLE:
+		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_ENABLE,
+					       HTT_H2T_MSG_RX_FSE_OPERATION);
+		break;
+	default:
+		dev_kfree_skb_any(skb);
+		return -EINVAL;
+	}
+
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	if (ret)
+		dev_kfree_skb_any(skb);
+
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "dp fse op msg sent: %d\n", ret);
+
+	return ret;
+}
+
+int ath12k_dp_htt_rx_fse_tuple_config(struct ath12k_base *ab, u32 tuple_mask,
+				      u8 pdev_id)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct htt_rx_msg_tuple_hash_cfg *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_htc_alloc_skb(ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, sizeof(*cmd));
+	cmd = (struct htt_rx_msg_tuple_hash_cfg *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_RX_FSE_TUPLE_HASH_CFG,
+				      HTT_H2T_MSG_RX_FSE_TUPLE_MSG_TYPE) |
+		     le32_encode_bits(pdev_id, HTT_H2T_MSG_RX_FSE_PDEV_ID);
+
+	cmd->info1 |= le32_encode_bits(tuple_mask,
+				       HTT_H2T_FLOW_CLASSIFY_TUPLE_FIELD_CONFIG);
+
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	if (ret)
+		dev_kfree_skb_any(skb);
+
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "dp fse 3 tuple enable msg: %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_htt_rx_fse_tuple_config);

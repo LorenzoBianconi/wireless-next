@@ -55,6 +55,9 @@ enum htt_h2t_msg_type {
 	HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG	= 0xc,
 	HTT_H2T_MSG_TYPE_EXT_STATS_CFG		= 0x10,
 	HTT_H2T_MSG_TYPE_PPDU_STATS_CFG		= 0x11,
+	HTT_H2T_MSG_TYPE_RX_FSE_SETUP_CFG	= 0x12,
+	HTT_H2T_MSG_TYPE_RX_FSE_OPERATION_CFG	= 0x13,
+	HTT_H2T_MSG_TYPE_RX_FSE_TUPLE_HASH_CFG	= 0x16,
 	HTT_H2T_MSG_TYPE_VDEV_TXRX_STATS_CFG	= 0x1a,
 	HTT_H2T_MSG_TYPE_TX_MONITOR_CFG		= 0x1b,
 };
@@ -1543,6 +1546,86 @@ struct htt_mac_addr {
 	__le32 mac_addr_h16;
 } __packed;
 
+/* info0 */
+#define HTT_DP_RX_FLOW_FST_SETUP_MSG_TYPE	GENMASK(7, 0)
+#define HTT_DP_RX_FLOW_FST_SETUP_PDEV_ID	GENMASK(15, 8)
+/* info1 */
+#define HTT_DP_RX_FLOW_FST_SETUP_NUM_RECORDS	GENMASK(19, 0)
+#define HTT_DP_RX_FLOW_FST_SETUP_MAX_SEARCH	GENMASK(27, 20)
+#define HTT_DP_RX_FLOW_FST_SETUP_IP_DA_SA	GENMASK(29, 28)
+/* info2 */
+#define HTT_DP_RX_FLOW_FST_SETUP_TOEPLITZ	GENMASK(26, 0)
+
+struct htt_rx_msg_flow_fst_setup {
+	__le32 info0;
+	__le32 info1;
+	__le32 base_addr_lo;
+	__le32 base_addr_hi;
+	__le32 toeplitz[9];
+	__le32 info2;
+} __packed;
+
+struct htt_rx_flow_fst_setup {
+	u32 max_entries;
+	u32 max_search;
+	u32 base_addr_lo;
+	u32 base_addr_hi;
+	u32 ip_prefix;
+	u8 *hash_key;
+};
+
+/* info0 */
+#define HTT_H2T_MSG_RX_FSE_MSG_TYPE		GENMASK(7, 0)
+#define HTT_H2T_MSG_RX_FSE_PDEV_ID		GENMASK(15, 8)
+/* info1 */
+#define HTT_H2T_MSG_RX_FSE_IPSEC_VALID		BIT(0)
+#define HTT_H2T_MSG_RX_FSE_OPERATION		GENMASK(7, 1)
+/* info2 */
+#define HTT_H2T_MSG_RX_FSE_SRC_PORT		GENMASK(15, 0)
+#define HTT_H2T_MSG_RX_FSE_DEST_PORT		GENMASK(31, 16)
+/* info3 */
+#define HTT_H2T_MSG_RX_FSE_L4_PROTO		GENMASK(7, 0)
+
+enum dp_flow_fst_op {
+	DP_FST_CACHE_OP_NONE,
+	DP_FST_CACHE_INVALIDATE_ENTRY,
+	DP_FST_CACHE_INVALIDATE_FULL,
+	DP_FST_ENABLE,
+	DP_FST_DISABLE
+};
+
+enum htt_rx_fse_op {
+	HTT_RX_FSE_CACHE_INVALIDATE_NONE,
+	HTT_RX_FSE_CACHE_INVALIDATE_ENTRY,
+	HTT_RX_FSE_CACHE_INVALIDATE_FULL,
+	HTT_RX_FSE_DISABLE,
+	HTT_RX_FSE_ENABLE,
+};
+
+struct htt_rx_msg_fse_op {
+	__le32 info0;
+	__le32 info1;
+	__le32 ip_src[4];
+	__le32 ip_dst[4];
+	__le32 info2;
+	__le32 info3;
+} __packed;
+
+/* info0 */
+#define HTT_H2T_MSG_RX_FSE_TUPLE_MSG_TYPE		GENMASK(7, 0)
+#define HTT_H2T_MSG_RX_FSE_TUPLE_PDEV_ID		GENMASK(15, 8)
+/* info1 */
+#define HTT_H2T_FLOW_ID_TOEPLITZ_FIELD_CONFIG		BIT(0)
+#define HTT_H2T_TOEPLITZ_2_OR_4_FIELD_CONFIG		BIT(1)
+#define HTT_H2T_FLOW_CLASSIFY_TUPLE_FIELD_CONFIG	BIT(2)
+
+#define HTT_H2T_FLOW_CLASSIFY_TUPLE_ENABLE		1
+
+struct htt_rx_msg_tuple_hash_cfg {
+	__le32 info0;
+	__le32 info1;
+} __packed;
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
@@ -1570,4 +1653,11 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int tx_buf_size,
 				     struct htt_tx_ring_tlv_filter *htt_tlv_filter);
 int ath12k_dp_tx_htt_monitor_mode_ring_config(struct ath12k *ar, bool reset);
+int ath12k_dp_htt_rx_fst_flow_setup(struct ath12k_base *ab,
+				    struct htt_rx_flow_fst_setup *info);
+int ath12k_dp_htt_rx_fse_flow_op(struct ath12k_base *ab,
+				 enum dp_flow_fst_op op_code,
+				 struct hal_flow_tuple *tuple);
+int ath12k_dp_htt_rx_fse_tuple_config(struct ath12k_base *ab, u32 tuple_mask,
+				      u8 pdev_id);
 #endif
