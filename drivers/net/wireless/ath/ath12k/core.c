@@ -1016,6 +1016,12 @@ static int ath12k_core_start(struct ath12k_base *ab)
 	/* Indicate the core start in the appropriate group */
 	ath12k_core_to_group_ref_get(ab);
 
+	ret = ath12k_dp_rx_fst_init(ab);
+	if (ret) {
+		ath12k_err(ab, "failed init fst: %d\n", ret);
+		goto err_reo_cleanup;
+	}
+
 	ret = ath12k_link_sta_rhash_tbl_init(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to init peer addr rhash table %d\n", ret);

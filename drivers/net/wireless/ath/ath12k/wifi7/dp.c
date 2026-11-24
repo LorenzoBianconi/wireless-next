@@ -153,6 +153,9 @@ static const struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.peer_rx_tid_qref_setup = ath12k_wifi7_peer_rx_tid_qref_setup,
 	.peer_rx_tid_qref_reset = ath12k_wifi7_peer_rx_tid_qref_reset,
 	.rx_tid_delete_handler = ath12k_wifi7_dp_rx_tid_delete_handler,
+	.rx_fst_alloc = ath12k_wifi7_dp_rx_fst_alloc,
+	.rx_fst_free = ath12k_wifi7_dp_rx_fst_free,
+	.rx_fst_init = ath12k_wifi7_dp_rx_fst_init,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

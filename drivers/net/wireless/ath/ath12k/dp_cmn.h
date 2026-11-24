@@ -28,6 +28,7 @@ struct ath12k_dp_hw {
 
 struct ath12k_dp_hw_group {
 	struct ath12k_dp *dp[ATH12K_MAX_DEVICES];
+	struct ath12k_dp_rx_fst *fst;
 };
 
 struct ath12k_dp_link_vif {

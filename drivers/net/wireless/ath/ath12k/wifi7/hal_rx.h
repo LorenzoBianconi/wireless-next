@@ -811,6 +811,43 @@ enum hal_mon_reception_type {
 #define HAL_RU_PER80(ru_per80, num_80mhz, ru_idx_per80mhz) \
 			(HAL_RU(ru_per80, num_80mhz, ru_idx_per80mhz))
 
+struct hal_rx_fse {
+	union {
+		struct in_addr src_v4;
+		struct in6_addr src_v6;
+	};
+
+	union {
+		struct in_addr dst_v4;
+		struct in6_addr dst_v6;
+	};
+
+	u32 info1;
+	u32 info2;
+	u32 meta;
+	u32 info3;
+	u32 msdu_byte;
+	u32 timestamp;
+	u32 info4;
+	u32 info5;
+};
+
+#define HAL_RX_FLOW_SEARCH_TABLE_SIZE	2048
+#define HAL_RX_FST_TOEPLITZ_KEYLEN	40
+#define HAL_RX_FST_ENTRY_SIZE		64
+#define HAL_RX_FST_MAX_SEARCH		16
+
+struct hal_rx_fst {
+	void *d;
+	dma_addr_t addr;
+
+	u8 *key;
+
+	u16 num_entries;
+	u16 skid_len;
+	u16 entry_size;
+};
+
 void ath12k_wifi7_hal_reo_status_queue_stats(struct ath12k_base *ab,
 					     struct hal_reo_get_queue_stats_status *desc,
 					     struct hal_reo_status *status);
@@ -870,5 +907,9 @@ void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
 void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type);
+
+struct hal_rx_fst *ath12k_wifi7_hal_rx_fst_alloc(struct ath12k_base *ab);
+void ath12k_wifi7_hal_rx_fst_free(struct ath12k_base *ab,
+				  struct hal_rx_fst *fst);
 
 #endif

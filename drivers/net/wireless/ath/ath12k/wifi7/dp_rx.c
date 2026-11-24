@@ -2374,3 +2374,56 @@ ath12k_wifi7_dp_rxdesc_mpdu_valid(struct ath12k_base *ab,
 
 	return tlv_tag == HAL_RX_MPDU_START;
 }
+
+int ath12k_wifi7_dp_rx_fst_alloc(struct ath12k_dp *dp,
+				 struct ath12k_dp_rx_fst *fst)
+{
+	fst->base = kzalloc_objs(struct ath12k_dp_rx_fse,
+				 HAL_RX_FLOW_SEARCH_TABLE_SIZE);
+	if (!fst->base)
+		return -ENOMEM;
+
+	fst->hal_rx_fst = ath12k_wifi7_hal_rx_fst_alloc(dp->ab);
+	if (!fst->hal_rx_fst) {
+		kfree(fst->base);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+void ath12k_wifi7_dp_rx_fst_free(struct ath12k_dp *dp,
+				 struct ath12k_dp_rx_fst *fst)
+{
+	ath12k_wifi7_hal_rx_fst_free(dp->ab, fst->hal_rx_fst);
+	kfree(fst->base);
+}
+
+int ath12k_wifi7_dp_rx_fst_init(struct ath12k_dp *dp,
+				struct ath12k_dp_rx_fst *fst)
+{
+	struct hal_rx_fst *hal_rx_fst = fst->hal_rx_fst;
+	struct htt_rx_flow_fst_setup info = {
+		.max_entries = hal_rx_fst->num_entries,
+		.max_search = hal_rx_fst->skid_len,
+		.base_addr_lo = lower_32_bits(hal_rx_fst->addr),
+		.base_addr_hi = lower_32_bits(hal_rx_fst->addr),
+		.ip_prefix = 2,
+		.hash_key = hal_rx_fst->key,
+	};
+	struct ath12k_base *ab = dp->ab;
+	int i, ret;
+
+	ret = ath12k_dp_htt_rx_fst_flow_setup(ab, &info);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		ret = ath12k_dp_htt_rx_fse_tuple_config(ab,
+				HTT_H2T_FLOW_CLASSIFY_TUPLE_ENABLE, i);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}

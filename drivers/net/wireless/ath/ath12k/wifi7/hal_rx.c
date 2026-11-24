@@ -974,3 +974,38 @@ void ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
 			   HAL_REO1_QDESC_ADDR(hal), val);
 }
+
+struct hal_rx_fst *ath12k_wifi7_hal_rx_fst_alloc(struct ath12k_base *ab)
+{
+	struct hal_rx_fst *fst;
+
+	fst = kzalloc_obj(*fst, GFP_KERNEL);
+	if (!fst)
+		return NULL;
+
+	fst->num_entries = HAL_RX_FLOW_SEARCH_TABLE_SIZE;
+	fst->entry_size = HAL_RX_FST_ENTRY_SIZE;
+	fst->skid_len = HAL_RX_FST_MAX_SEARCH;
+
+	fst->d = dma_alloc_coherent(ab->dev,
+				    fst->num_entries * fst->entry_size,
+				    &fst->addr, GFP_KERNEL);
+	if (!fst->d) {
+		kfree(fst);
+		return NULL;
+	}
+
+	memset(fst->d, 0, fst->num_entries * fst->entry_size);
+
+	/* XXX missing key configuration */
+
+	return fst;
+}
+
+void ath12k_wifi7_hal_rx_fst_free(struct ath12k_base *ab,
+				  struct hal_rx_fst *fst)
+{
+	dma_free_coherent(ab->dev, fst->num_entries * fst->entry_size, fst->d,
+			  fst->addr);
+	kfree(fst);
+}

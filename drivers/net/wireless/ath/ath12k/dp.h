@@ -405,6 +405,9 @@ struct ath12k_dp_arch_ops {
 	void (*peer_rx_tid_qref_reset)(struct ath12k_base *ab, u16 peer_id, u16 tid);
 	int (*rx_tid_delete_handler)(struct ath12k_base *ab,
 				     struct ath12k_dp_rx_tid_rxq *rx_tid);
+	int (*rx_fst_alloc)(struct ath12k_dp *dp, struct ath12k_dp_rx_fst *fst);
+	void (*rx_fst_free)(struct ath12k_dp *dp, struct ath12k_dp_rx_fst *fst);
+	int (*rx_fst_init)(struct ath12k_dp *dp, struct ath12k_dp_rx_fst *fst);
 };
 
 struct ath12k_device_dp_tx_err_stats {
@@ -734,6 +737,24 @@ static inline u32
 ath12k_dp_rxdma_buf_ring_size(const struct ath12k_dp_profile_params *p)
 {
 	return p->rxdma_buf_ring_size;
+}
+
+static inline int
+ath12k_dp_arch_rx_fst_alloc(struct ath12k_dp *dp, struct ath12k_dp_rx_fst *fst)
+{
+	return dp->ops->rx_fst_alloc(dp, fst);
+}
+
+static inline void
+ath12k_dp_arch_rx_fst_free(struct ath12k_dp *dp, struct ath12k_dp_rx_fst *fst)
+{
+	return dp->ops->rx_fst_free(dp, fst);
+}
+
+static inline int
+ath12k_dp_arch_rx_fst_init(struct ath12k_dp *dp, struct ath12k_dp_rx_fst *fst)
+{
+	return dp->ops->rx_fst_init(dp, fst);
 }
 
 u8 ath12k_dp_drv_link_id_to_device_id(struct ath12k_hw_group *ag, u8 drv_link_id);

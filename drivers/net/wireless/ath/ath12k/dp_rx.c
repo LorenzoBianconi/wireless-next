@@ -1833,3 +1833,41 @@ int ath12k_dp_rx_pdev_mon_attach(struct ath12k *ar)
 
 	return 0;
 }
+
+struct ath12k_dp_rx_fst *ath12k_dp_rx_fst_alloc(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_rx_fst *fst;
+
+	if (!ab->hw_params->fse) /* FSE not supported */
+		return NULL;
+
+	fst = kzalloc_obj(*fst, GFP_KERNEL);
+	if (!fst)
+		return NULL;
+
+	if (ath12k_dp_arch_rx_fst_alloc(dp, fst)) {
+		kfree(fst);
+		return NULL;
+	}
+
+	return fst;
+}
+
+void ath12k_dp_rx_fst_free(struct ath12k_base *ab,
+			   struct ath12k_dp_rx_fst *fst)
+{
+	ath12k_dp_arch_rx_fst_free(ath12k_ab_to_dp(ab), fst);
+	kfree(fst);
+}
+
+int ath12k_dp_rx_fst_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_hw_group *ag = ab->ag;
+
+	if (!ag->dp_hw_grp.fst)
+		return 0;
+
+	return ath12k_dp_arch_rx_fst_init(dp, ag->dp_hw_grp.fst);
+}

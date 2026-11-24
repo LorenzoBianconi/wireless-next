@@ -10,6 +10,10 @@
 #include "../dp_rx.h"
 #include "hal_rx_desc.h"
 
+struct ath12k_dp_rx_fse {
+	u32 id;
+};
+
 struct ath12k_hal_reo_cmd;
 
 u8 ath12k_wifi7_dp_rx_get_logical_link_id(struct ath12k_dp *dp,
@@ -59,4 +63,10 @@ ath12k_wifi7_dp_rxdesc_mpdu_valid(struct ath12k_base *ab,
 				  struct hal_rx_desc *rx_desc);
 int ath12k_wifi7_dp_rx_tid_delete_handler(struct ath12k_base *ab,
 					  struct ath12k_dp_rx_tid_rxq *rx_tid);
+int ath12k_wifi7_dp_rx_fst_alloc(struct ath12k_dp *dp,
+				 struct ath12k_dp_rx_fst *fst);
+void ath12k_wifi7_dp_rx_fst_free(struct ath12k_dp *dp,
+				 struct ath12k_dp_rx_fst *fst);
+int ath12k_wifi7_dp_rx_fst_init(struct ath12k_dp *dp,
+				struct ath12k_dp_rx_fst *fst);
 #endif

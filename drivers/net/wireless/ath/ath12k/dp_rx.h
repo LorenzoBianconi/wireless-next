@@ -83,6 +83,11 @@ struct ath12k_dp_rx_rfc1042_hdr {
 	__be16 snap_type;
 } __packed;
 
+struct ath12k_dp_rx_fst {
+	void *base;
+	void *hal_rx_fst;
+};
+
 static inline u32 ath12k_he_gi_to_nl80211_he_gi(u8 sgi)
 {
 	u32 ret = 0;
@@ -267,4 +272,8 @@ void ath12k_dp_init_rx_tid_rxq(struct ath12k_dp_rx_tid_rxq *rx_tid_rxq,
 			       struct ath12k_dp_rx_tid *rx_tid,
 			       bool active);
 void ath12k_dp_mark_tid_as_inactive(struct ath12k_dp *dp, int peer_id, u8 tid);
+
+struct ath12k_dp_rx_fst *ath12k_dp_rx_fst_alloc(struct ath12k_base *ab);
+void ath12k_dp_rx_fst_free(struct ath12k_base *ab, struct ath12k_dp_rx_fst *fst);
+int ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 #endif /* ATH12K_DP_RX_H */
